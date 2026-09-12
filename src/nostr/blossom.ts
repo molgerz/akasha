@@ -27,15 +27,14 @@ async function sha256Hex(data: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** Does this URL belong to our configured server? */
-export function isOwnAttachment(url: string): boolean {
-  if (!attachmentsEnabled()) return false
-  try {
-    return new URL(url).origin === new URL(BLOSSOM_SERVER).origin
-  } catch {
-    return false
-  }
-}
+/**
+ * There is deliberately no `isOwnAttachment` any more.
+ *
+ * It was the test behind the click-to-load gate on images, which is gone: every
+ * image in a page is loaded directly, ours or anybody's. Keeping a function
+ * that answers "is this ours?" with nothing asking the question would only
+ * suggest a gate that is no longer there. docs/09-security-privacy.md
+ */
 
 export async function uploadAttachment(signer: Signer, file: File): Promise<UploadResult> {
   if (!attachmentsEnabled()) {

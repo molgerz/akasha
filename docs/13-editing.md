@@ -3,8 +3,9 @@
 **Decision:** the editor has no Write/Preview switch, because there is nothing
 to switch between. The text is drawn the way it will be read while it is being
 typed. Typing `# ` and a space sizes the line as a heading on the spot; `- `
-turns into a bullet; `**bold**` goes bold. The Markdown markers are only
-visible on the line the cursor is on.
+turns into a bullet; `**bold**` goes bold; a pipe table is drawn as a table and
+an `![alt](url)` as the picture. The Markdown markers are only visible on the
+line the cursor is on.
 
 **Why:** this is the thing a rich-text wiki gets right that a Markdown box does
 not.
@@ -53,8 +54,12 @@ Three deliberate exceptions:
   a list when you leave it: it reads as "it did not work". `- ` and `[ ]` are
   one marker here, so the dash goes with the box; Backspace takes the whole
   marker and leaves an ordinary bullet behind.
-- **An image stays as written** — `![alt](url)`. Drawn as its alt text alone it
-  would look like a paragraph that had lost its picture.
+- **A table reveals as a whole, not line by line.** Columns only line up if
+  every row is laid out against all the others, so a table is drawn as one block
+  and gives its source back as one block the moment the cursor is anywhere
+  inside it. Half a table over half its source would be neither. An image is a
+  single inline construct and needs no exception: it is drawn off the active
+  line and shows its Markdown on it, like everything else.
 
 The indentation of a nested list item is markup too, so the active line shows
 it again — the item shifts by the two spaces it is written with, the way a
@@ -180,6 +185,30 @@ A divider needs no blank line above it here. In CommonMark `---` directly under
 a line of text is not a divider at all but a Setext H2 for the line above — the
 trap this app closes by not recognising Setext headings. See
 `src/ui/markdown-flavour.ts`.
+
+### Tables and images
+
+| Type | Result |
+|---|---|
+| `| a | b |` with a `---` line under it | Drawn as the table it is: a header band, one rule under each row, and the column alignment the delimiter row asks for with `---`, `:---`, `---:` or `:---:` |
+| `![alt](url)` | The picture, loaded from wherever it points |
+
+A table is the one construct whose unit of reveal is the construct and not the
+line — see the exceptions above. It is drawn by a `StateField` of its own in
+`src/ui/markdown-live.ts` rather than by the line plugin, because replacing it
+spans line breaks and a `ViewPlugin` is not allowed to do that; the field is
+told about focus through `EditorView.focusChangeEffect`, because a state field
+cannot see the view.
+
+The columns are a CSS grid with the same count and the same fractions on every
+row, which is what lines them up — a `table` element's own layout does not
+survive being put inside a line of text. The cells are read the way a paragraph
+is: `**bold**`, `` `code` `` and a mention become the same thing here as anywhere
+else, and a link shows its label with its target hidden as markup.
+
+An image is drawn the way the page draws it and is loaded from wherever it
+points — there is no gate on the origin any more, in the editor as little as on
+the page. What that costs is written down in docs/09-security-privacy.md
 
 Code inside a fence is coloured, but by a small style bound to the theme tokens
 (`codeHighlight` in `src/ui/MarkdownEditor.tsx`), not by CodeMirror's default
@@ -366,10 +395,11 @@ there for the second question — "how do I get a quote?" — not the first one.
 
 ## Open
 
-- **Tables.** The `/` menu writes the skeleton and
-  [`Markdown.tsx`](../src/ui/Markdown.tsx) renders GFM tables, wide ones
-  scrolling. What is still missing is help *editing* one: moving between
-  cells, keeping the pipes aligned and adding a column. A pipe table is the one
+- **Tables.** The `/` menu writes the skeleton, the editor draws the table
+  from it and [`Markdown.tsx`](../src/ui/Markdown.tsx) renders GFM tables, wide
+  ones scrolling. What is still missing is help *editing* one: moving between
+  cells, keeping the pipes aligned and adding a column — today a table hands its
+  source back as a whole and is edited as the text it is. A pipe table is the one
   piece of Markdown that really is hard by hand, and column-aware editing is the
   half of it the menu does not cover.
 - **Macros and layouts.** The insert menu (`/table`, `/image`, `/code`,

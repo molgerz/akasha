@@ -216,6 +216,46 @@ function editorTheme(dark: boolean) {
       },
       '.cm-md-hr-raw': { color: 'var(--fg-subtle)' },
 
+      // — tables and images —
+      // The same drawing as the page: one rule under each row, a header band,
+      // `px-3 py-2` cells at 14px, a bordered card around the table, and a
+      // picture with the same border and radius. Read against `PAGE` and the
+      // `table`/`th`/`td`/`img` components in `src/ui/Markdown.tsx` — when one
+      // of the two changes, the other has to follow.
+      '.cm-md-table': {
+        margin: '1.5rem 0',
+        border: '1px solid var(--line)',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        width: '100%',
+        boxSizing: 'border-box',
+        // The line this widget sits in is `pre-wrap`; a grid inside it would
+        // inherit that and break on every newline of its own DOM.
+        whiteSpace: 'normal',
+      },
+      '.cm-md-table-row': { display: 'grid' },
+      '.cm-md-table-cell': {
+        padding: '0.5rem 0.75rem',
+        fontSize: '14px',
+        lineHeight: '1.5',
+        borderBottom: '1px solid var(--line)',
+        color: 'var(--fg-muted)',
+        overflowWrap: 'anywhere',
+      },
+      '.cm-md-table-head .cm-md-table-cell': {
+        backgroundColor: 'var(--surface-1)',
+        color: 'var(--fg)',
+        fontWeight: '600',
+        textAlign: 'left',
+      },
+      '.cm-md-table-row:last-child .cm-md-table-cell': { borderBottom: 'none' },
+      '.cm-md-image': { display: 'block', margin: '1.5rem 0', whiteSpace: 'normal' },
+      '.cm-md-image img': {
+        display: 'block',
+        maxWidth: '100%',
+        borderRadius: '8px',
+        border: '1px solid var(--line)',
+      },
       // — mentions —
       // A chip, not a link: it names a person, and clicking it in the editor
       // should place the cursor rather than navigate.
