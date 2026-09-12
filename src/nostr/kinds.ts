@@ -92,6 +92,10 @@ export const TAGS = {
   SUMMARY: 'summary',
   /** Restore: id of the revision whose content was taken over */
   RESTORE_OF: 'restore-of',
+  /** NIP-09: event id a deletion request targets */
+  DELETED_EVENT: 'e',
+  /** NIP-09: kind of the events a deletion request targets */
+  DELETED_KIND: 'k',
   /** Content type, always text/markdown here */
   MIME: 'm',
   /** NIP-31: fallback description for foreign clients */
