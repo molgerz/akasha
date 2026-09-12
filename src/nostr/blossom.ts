@@ -19,6 +19,9 @@ export function attachmentsEnabled(): boolean {
   return BLOSSOM_SERVER.length > 0
 }
 
+/** Why an upload cannot happen without a server — shown, not swallowed. */
+export const NO_BLOSSOM_SERVER = 'No Blossom server configured (VITE_BLOSSOM_SERVER).'
+
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', data)
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
@@ -36,7 +39,7 @@ export function isOwnAttachment(url: string): boolean {
 
 export async function uploadAttachment(signer: Signer, file: File): Promise<UploadResult> {
   if (!attachmentsEnabled()) {
-    return { ok: false, reason: 'No Blossom server configured (VITE_BLOSSOM_SERVER).' }
+    return { ok: false, reason: NO_BLOSSOM_SERVER }
   }
 
   const data = await file.arrayBuffer()
@@ -89,11 +92,20 @@ export async function uploadAttachment(signer: Signer, file: File): Promise<Uplo
   }
 }
 
-/** Markdown embed for an uploaded file. */
+/**
+ * Markdown embed for an uploaded file.
+ *
+ * The filename is user input and goes inside the label, where a `]`, a `[` or a
+ * line break would end it early and break the Markdown — a file called
+ * `notes].md` would produce a link whose target swallows the rest of the line.
+ * Those characters are dropped and, if nothing readable is left, the label
+ * falls back to a neutral word.
+ */
 export function attachmentMarkdown(result: {
   url: string
   type: string
 }, name: string): string {
   const isImage = result.type.startsWith('image/')
-  return isImage ? `![${name}](${result.url})` : `[${name}](${result.url})`
+  const label = name.replace(/[[\]\r\n]/g, '').trim() || 'attachment'
+  return isImage ? `![${label}](${result.url})` : `[${label}](${result.url})`
 }

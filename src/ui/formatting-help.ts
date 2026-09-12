@@ -34,4 +34,8 @@ export const FORMATTING_RULES: FormattingRule[] = [
   // A lone colon opens nothing — it is punctuation far more often than it is
   // the start of an emoji. src/ui/editor-complete.ts
   { syntax: ':smile', meaning: 'Emoji — the list opens from the first letter' },
+  // The one affordance in this list rather than a piece of Markdown, but the
+  // fold is read precisely by somebody asking "how do I get a table?" —
+  // src/ui/editor-slash.ts
+  { syntax: '/', meaning: 'Insert menu — table, image/attachment, code block, quote or divider' },
 ]

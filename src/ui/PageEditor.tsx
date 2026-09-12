@@ -5,6 +5,13 @@ import { publishRevision } from '../nostr/publish-page'
 import { publishPlacement } from '../nostr/publish-placement'
 import { useSession } from '../session/session'
 import { MarkdownEditor } from './MarkdownEditor'
+import type { EditorHandle } from './MarkdownEditor'
+import {
+  NO_BLOSSOM_SERVER,
+  attachmentMarkdown,
+  attachmentsEnabled,
+  uploadAttachment,
+} from '../nostr/blossom'
 import { hasConflictMarkers, mergeThreeWay } from '../domain/merge'
 import { shortNpub, toNpub } from '../nostr/profile'
 import { SignInButton } from './SignInButton'
@@ -129,6 +136,10 @@ export function PageEditor({
   const [parentSlug] = useState(page?.parentSlug ?? defaultParentSlug ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const editorHandle = useRef<EditorHandle | null>(null)
+  const fileInput = useRef<HTMLInputElement | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadNote, setUploadNote] = useState<string | null>(null)
 
   if (session.status !== 'signed-in') {
     return (
@@ -145,6 +156,47 @@ export function PageEditor({
   const slug = page?.slug ?? normalizeSlug(title)
   const existing = page ?? (slug.length > 0 ? pages.find((entry) => entry.slug === slug) : undefined)
   const collision = !page && existing !== undefined
+
+  /**
+   * Upload an attachment and insert it at the cursor. Images as ![…](url),
+   * everything else as a link — the file then lives on the Blossom server and
+   * the Nostr event only carries the URL.
+   */
+  const upload = async (files: File[]) => {
+    if (session.status !== 'signed-in' || files.length === 0) return
+    setUploadNote(null)
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const result = await uploadAttachment(session.signer, file)
+        if (!result.ok) {
+          setUploadNote(`${file.name}: ${result.reason}`)
+          return
+        }
+        const snippet = attachmentMarkdown(result, file.name)
+        if (editorHandle.current) editorHandle.current.insert(`\n${snippet}\n`)
+        else setContent((current) => `${current}\n${snippet}\n`)
+        setUploadNote(`${file.name} uploaded (${Math.round(result.size / 1024)} kB)`)
+      }
+    } catch (err) {
+      setUploadNote(err instanceof Error ? err.message : 'upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /**
+   * The `/` menu's attachment entry. It is the upload's only affordance since
+   * the toolbar was stripped, so without a Blossom server the reason is shown
+   * where the note sits rather than opening a picker that can only fail.
+   */
+  const openAttach = () => {
+    if (!attachmentsEnabled()) {
+      setUploadNote(NO_BLOSSOM_SERVER)
+      return
+    }
+    fileInput.current?.click()
+  }
 
   const save = async () => {
     setError(null)
@@ -287,7 +339,26 @@ export function PageEditor({
         onChange={setContent}
         ariaLabel="Content in Markdown"
         members={members}
+        handleRef={editorHandle}
+        onAttach={openAttach}
+        onDropFiles={(files) => void upload(files)}
       />
+
+      {/* The file picker the `/` menu's attachment entry opens. Kept out of
+          the flow — the affordance is the menu, not a button. */}
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])]
+          event.target.value = ''
+          void upload(files)
+        }}
+      />
+      {uploading ? <p className="text-xs text-fg-subtle">uploading…</p> : null}
+      {uploadNote ? <p className="text-xs text-fg-subtle">{uploadNote}</p> : null}
 
       {/* The relay's own words, never a paraphrase: with distributed storage
           "saved" must not be claimed before an OK came back, and when it did

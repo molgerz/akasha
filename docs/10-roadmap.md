@@ -208,12 +208,10 @@ the "what did you change?" summary field — Create and Edit now show just the
 title and a plain, unframed Markdown area, with Publish/Cancel moved into the
 breadcrumb bar via `HeaderActions` (`src/ui/layout/PageFrame.tsx`). The upload
 plumbing in `src/nostr/blossom.ts` and the drag & drop hook in
-`MarkdownEditor` (`onDropFiles`) are untouched but no longer wired up from
-`PageEditor` — attaching a file currently has no way in. **Needed:** a new
-affordance for attachments that fits the plain editor instead of a toolbar
-button. Since the live formatting landed the answer is most likely the `/`
-insert menu from [13](13-editing.md), which is where tables and images belong
-too.
+`MarkdownEditor` (`onDropFiles`) are wired up again from `PageEditor` through
+the `/` insert menu ([13](13-editing.md)): its attachment entry opens the file
+picker, and the menu also writes the table, code block, quote and divider that
+the plain editor needs. The toolbar button's job is done without the toolbar.
 
 ### Described in the docs but not built yet
 
@@ -229,8 +227,7 @@ As of 2026-09-07, found while comparing the docs against the code:
 | Writing `previous` timeline references | [02](02-data-model-events.md) |
 | Sidebar entries "all pages", "recently changed", "space settings" | [06](06-ui-information-architecture.md) |
 | Onboarding note that an npub is a permanent pseudonym | [09](09-security-privacy.md) |
-| `/` insert menu (tables, images, macros, layouts) — also the way attachments get back in | [13](13-editing.md) |
-| Help writing a table; a pipe table is the one bit of Markdown that is genuinely hard by hand | [13](13-editing.md) |
+| Help editing a table — column-aware movement and alignment; the skeleton itself comes from the `/` menu | [13](13-editing.md) |
 
 ### Deliberately solved differently than planned
 

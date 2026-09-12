@@ -5,7 +5,8 @@ import { shortNpub, toNpub } from '../nostr/profile'
 import { searchEmoji } from './emoji'
 
 /**
- * The two dropdowns the editor offers: `@` for people and `:` for emoji.
+ * The `@` and `:` dropdowns: people and emoji. The editor's third dropdown,
+ * the `/` insert menu, lives next to this file in `src/ui/editor-slash.ts`.
  *
  * Both are anchored to a word boundary. Without that guard `@` would fire
  * inside an e-mail address and `:` inside `https://` or `12:30` — the sort of
@@ -16,7 +17,7 @@ import { searchEmoji } from './emoji'
  * allows a promise: everything they need is already in memory, and the type
  * says so.
  */
-type SyncSource = (context: CompletionContext) => CompletionResult | null
+export type SyncSource = (context: CompletionContext) => CompletionResult | null
 
 
 /**

@@ -233,6 +233,37 @@ A lone `:` opens nothing. `:` is punctuation far more often than it is the start
 of an emoji, and the boundary guard also keeps the dropdown out of `https://`
 and out of `12:30`.
 
+### Insert menu — `/`
+
+`/` at the start of a line opens a menu of blocks: **Table**, **Image /
+attachment**, **Code block**, **Quote** and **Divider**. It is the editor's
+third dropdown, built on the same autocompletion as `@` and `:` — one popup
+theme and one keyboard model, not a menu of its own.
+
+It exists for the one piece of Markdown that is genuinely hard to type by hand:
+the **pipe table**. The entry writes a 2×2 skeleton with a blank line above it
+and puts the cursor in the first header cell, so the next keystrokes are cell
+contents; the rendered page then treats it like any other GFM table
+(`src/ui/editor-slash.ts` exports the skeleton as `TABLE_SKELETON`). The other
+entries insert their block and leave the cursor where the writing continues —
+the code entry lands on the fence's language line, the divider after the rule.
+
+`/` only opens where the slash is the **first character of its line**. `@`
+stays out of e-mails and `:` out of `https://` for the same reason: a dropdown
+that fires in the middle of a sentence is worse than none. It also stays out of
+inline code, a fenced block and a URL, and typing after the slash narrows the
+list — `/ta` is Table, `/img` the attachment entry, because each entry carries
+aliases.
+
+**The attachment entry is the Blossom upload's way back in.** Picking it opens
+the file picker and removes the typed `/image`; the file is uploaded with the
+same kind `24242` authorisation as before and the resulting `![alt](url)` (a
+link for anything that is not an image) is inserted at the cursor. Dragging a
+file onto the editor runs the same upload. Without `VITE_BLOSSOM_SERVER` the
+entry cannot open a picker that could only fail, so it shows the reason where
+the upload note sits — the same promise as before, kept by the menu instead of
+by a disabled button.
+
 ## Why the write and read views must not drift
 
 The sizes in `editorTheme` (`src/ui/MarkdownEditor.tsx`) mirror `PAGE` in
@@ -335,16 +366,15 @@ there for the second question — "how do I get a quote?" — not the first one.
 
 ## Open
 
-- **`/` at the start of a line → insert menu.** A wiki usually opens a menu for
-  tables, images and layouts there. Not built. This is also where
-  attachments should come back: since the editor was stripped to title +
-  Markdown ([10](10-roadmap.md), phase 6) the Blossom upload in
-  `src/nostr/blossom.ts` has no way in except drag & drop.
-- **Tables.** Rendered ([`Markdown.tsx`](../src/ui/Markdown.tsx) handles GFM
-  tables, wide ones scroll), but there is no help writing one — a pipe table is
-  the one piece of Markdown syntax that really is hard to type by hand, and
-  doing it properly means column-aware editing, which belongs with the insert
-  menu.
+- **Tables.** The `/` menu writes the skeleton and
+  [`Markdown.tsx`](../src/ui/Markdown.tsx) renders GFM tables, wide ones
+  scrolling. What is still missing is help *editing* one: moving between
+  cells, keeping the pipes aligned and adding a column. A pipe table is the one
+  piece of Markdown that really is hard by hand, and column-aware editing is the
+  half of it the menu does not cover.
+- **Macros and layouts.** The insert menu (`/table`, `/image`, `/code`,
+  `/quote`, `/divider`) holds the blocks the plain editor needs; the wiki-style
+  macro and layout entries are still not built.
 - **Auto-replacing a typed-out `:smile:`.** Only the dropdown converts a
   shortcode today. Doing it on the text as well risks firing inside things like
   `a:b:c`, so it waits for a reason.

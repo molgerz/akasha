@@ -21,6 +21,7 @@ import { tags } from '@lezer/highlight'
 import { useTheme } from '../theme/theme'
 import { liveMarkdown } from './markdown-live'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
+import { slashInsertCompletion } from './editor-slash'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 
 /**
@@ -227,7 +228,7 @@ function editorTheme(dark: boolean) {
         fontSize: '0.95em',
       },
 
-      // — the @ and : dropdowns —
+      // — the @, : and / dropdowns —
       // CodeMirror's default popup is styled for a code editor and stays light
       // in dark mode. It gets the app's tokens instead. docs/12-theming.md
       '.cm-tooltip.cm-tooltip-autocomplete': {
@@ -445,6 +446,8 @@ type Props = {
   handleRef?: { current: EditorHandle | null }
   /** files dropped onto the editor */
   onDropFiles?: (files: File[]) => void
+  /** the `/` menu's attachment entry — opens the file picker */
+  onAttach?: () => void
 }
 
 export function MarkdownEditor({
@@ -452,9 +455,10 @@ export function MarkdownEditor({
   onChange,
   ariaLabel,
   members,
-  placeholder = 'Start writing. “# ” makes a heading, “- ” a list, “@” mentions somebody.',
+  placeholder = 'Start writing. “# ” makes a heading, “- ” a list, “@” mentions somebody, “/” inserts a table or a file.',
   handleRef,
   onDropFiles,
+  onAttach,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
@@ -462,6 +466,11 @@ export function MarkdownEditor({
   onChangeRef.current = onChange
   const onDropRef = useRef(onDropFiles)
   onDropRef.current = onDropFiles
+  // The completion source is captured when the editor is built, once. Reading
+  // the callback through a ref keeps a later session (an account switch, a
+  // different Blossom server) from being frozen into the first render.
+  const onAttachRef = useRef(onAttach)
+  onAttachRef.current = onAttach
   // Read through a ref, so members arriving from the relay after mount are
   // offered without rebuilding the editor.
   const membersRef = useRef(members ?? [])
@@ -508,7 +517,11 @@ export function MarkdownEditor({
         normaliseTaskMarker,
         liveMarkdown,
         autocompletion({
-          override: [mentionCompletion(() => membersRef.current), emojiCompletion],
+          override: [
+            mentionCompletion(() => membersRef.current),
+            emojiCompletion,
+            slashInsertCompletion(() => onAttachRef.current?.()),
+          ],
           icons: false,
           activateOnTyping: true,
         }),

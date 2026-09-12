@@ -338,15 +338,17 @@ decoration layer over Markdown rather than a WYSIWYG document model, is
 [13](13-editing.md).
 
 - **Implemented**: CodeMirror 6 with live formatting, `@` mentions, `:` emoji,
-  and a folded `Formatting` disclosure listing the shortcuts. The colour mode is
-  swapped through a `Compartment` so that cursor and undo history survive the
-  switch.
+  the `/` insert menu (table, image/attachment, code block, quote, divider —
+  [13](13-editing.md)), and a folded `Formatting` disclosure listing the
+  shortcuts. The attachment upload lives in that menu, which is what let the
+  Attach button go. The colour mode is swapped through a `Compartment` so that
+  cursor and undo history survive the switch.
 - **Deliberately not a toolbar.** A toolbar puts the technical vocabulary back
-  on screen permanently, which is exactly what the live formatting removes.
-- **Planned**: `/` at the start of a line opening an insert menu (tables,
-  images, macros). That is also where attaching a file has to come back — since
-  the editor was stripped to title + Markdown the Blossom upload has no way in
-  except drag & drop.
+  on screen permanently, which is exactly what the live formatting removes. The
+  `/` menu keeps that promise: it is there when typed and invisible otherwise.
+- **Planned**: macro and layout entries as further `/` blocks. The menu itself
+  and the attachment upload are built; only the wiki-style macro entries are
+  still missing.
 - **Dropped**: the change-note field and the parent-page picker. Filing a page
   elsewhere is its own action, not a field in the editor.
 

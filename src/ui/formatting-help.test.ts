@@ -7,6 +7,7 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { liveMarkdown } from './markdown-live'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
+import { slashInsertCompletion } from './editor-slash'
 import { FORMATTING_RULES } from './formatting-help'
 
 /**
@@ -59,6 +60,7 @@ const PROOF: Record<string, () => boolean> = {
   '---': () => draws('Text\n\n---', has('.cm-md-rule')),
   '@': () => mentionCompletion(() => ['1'.repeat(64)])(at('@')) !== null,
   ':smile': () => emojiCompletion(at(':smile')) !== null,
+  '/': () => slashInsertCompletion()(at('/')) !== null,
 }
 
 describe('the Formatting fold', () => {
