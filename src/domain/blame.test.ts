@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { blame, firstParentChain } from './blame'
+import { buildPages } from './pages'
 import type { Revision } from './revision'
 
 function rev(id: string, content: string, parents: string[] = [], author = 'alice'): Revision {
@@ -64,5 +65,29 @@ describe('blame', () => {
     const r3 = rev('r3', 'a\nB\nc\nd', ['r2'], 'carol')
     const result = blame([r1, r2, r3], r3)
     expect(result.map((line) => line.revision.author)).toEqual(['alice', 'carol', 'alice', 'bob'])
+  })
+
+  // The page's revisions are already the repaired list (src/domain/pages.ts),
+  // so blame walks over the gap without knowing about the deletion itself.
+  it('reaches across a removed revision and keeps earlier attribution', () => {
+    const r1 = rev('r1', 'one\ntwo\nthree', [], 'alice')
+    const r2 = rev('r2', 'one\ntwo\nthree\nfour', ['r1'], 'bob')
+    const r3 = rev('r3', 'one\ntwo\nthree\nfour\nfive', ['r2'], 'carol')
+    const page = buildPages([r1, r2, r3], new Map(), new Set(['r2']))[0]
+
+    const result = blame(page.revisions, page.head)
+
+    expect(result.map((line) => [line.text, line.revision.author])).toEqual([
+      ['one', 'alice'],
+      ['two', 'alice'],
+      ['three', 'alice'],
+      ['four', 'carol'],
+      ['five', 'carol'],
+    ])
+  })
+
+  it('yields no lines for an empty head instead of crashing', () => {
+    const head = rev('head', '')
+    expect(blame([head], head)).toEqual([])
   })
 })

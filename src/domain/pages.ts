@@ -28,12 +28,67 @@ function sortNewestFirst(a: Revision, b: Revision): number {
 }
 
 /**
+ * Drops the revisions a NIP-09 request removed and reconnects the chain around
+ * them: a survivor whose `parent-rev` names a removed revision is re-pointed
+ * at that revision's nearest surviving ancestor. The removed node is skipped,
+ * but its ancestors stay reachable — the chain does not tear.
+ *
+ * A predecessor that was never loaded is kept as-is (the tolerated missing
+ * link), and a parent cycle among removed revisions resolves to nothing rather
+ * than hanging. The first parent stays first, so `firstParentChain` keeps its
+ * meaning; duplicate targets are collapsed.
+ */
+export function visibleRevisions(revisions: Revision[], deleted: Set<string>): Revision[] {
+  if (deleted.size === 0) return revisions
+  const byId = new Map(revisions.map((revision) => [revision.id, revision]))
+  const visible: Revision[] = []
+  for (const revision of revisions) {
+    if (deleted.has(revision.id)) continue
+    visible.push({ ...revision, parentRevs: reconnectParents(revision.parentRevs, byId, deleted) })
+  }
+  return visible
+}
+
+function reconnectParents(
+  parentRevs: string[],
+  byId: Map<string, Revision>,
+  deleted: Set<string>,
+): string[] {
+  const resolved: string[] = []
+  for (const parentId of parentRevs) {
+    let current = parentId
+    const seen = new Set<string>()
+    while (deleted.has(current)) {
+      // A cycle between removed revisions has no surviving ancestor.
+      if (seen.has(current)) {
+        current = ''
+        break
+      }
+      seen.add(current)
+      const parent = byId.get(current)
+      if (!parent) {
+        current = ''
+        break
+      }
+      current = parent.parentRevs[0] ?? ''
+    }
+    if (current && !resolved.includes(current)) resolved.push(current)
+  }
+  return resolved
+}
+
+/**
  * Builds the pages from all revisions of a group.
  *
  * Head resolution: leaves are revisions no other revision points at via
  * `parent-rev`. With several leaves (concurrent editing) the newest is
  * displayed, but the fork is not hidden — `leaves` keeps all of them.
  * docs/05-versioning-history.md
+ *
+ * `deleted` holds the ids a NIP-09 request removed. They are skipped in the
+ * exposed list and in the leaves, and the survivors are reconnected around
+ * them (see `visibleRevisions`) — the repair is what keeps a removed middle
+ * revision's parent from looking like a leaf again.
  *
  * Where a page hangs comes from its placement event when there is one, and
  * from the tags of its first revision otherwise — a page that has never been
@@ -42,9 +97,11 @@ function sortNewestFirst(a: Revision, b: Revision): number {
 export function buildPages(
   revisions: Revision[],
   placements: Map<string, Placement> = new Map(),
+  deleted: Set<string> = new Set(),
 ): Page[] {
+  const visible = visibleRevisions(revisions, deleted)
   const bySlug = new Map<string, Revision[]>()
-  for (const revision of revisions) {
+  for (const revision of visible) {
     const list = bySlug.get(revision.slug)
     if (list) list.push(revision)
     else bySlug.set(revision.slug, [revision])
@@ -53,6 +110,8 @@ export function buildPages(
   const pages: Page[] = []
   for (const [slug, list] of bySlug) {
     const sorted = [...list].sort(sortNewestFirst)
+    // Over the repaired list, so a survivor bridged past a removed revision
+    // counts as referencing the surviving ancestor it now points at.
     const referenced = new Set<string>()
     for (const revision of sorted) {
       for (const parent of revision.parentRevs) referenced.add(parent)

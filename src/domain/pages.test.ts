@@ -94,6 +94,132 @@ describe('buildPages — head resolution', () => {
   })
 })
 
+describe('buildPages — revisions removed by a NIP-09 request', () => {
+  it('moves the head back to the parent when the head was removed', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100 }),
+        rev({ id: 'r2', createdAt: 200, parentRevs: ['r1'] }),
+        rev({ id: 'r3', createdAt: 300, parentRevs: ['r2'] }),
+      ],
+      new Map(),
+      new Set(['r3']),
+    )
+    expect(pages[0].head.id).toBe('r2')
+    expect(pages[0].revisions.map((r) => r.id)).toEqual(['r2', 'r1'])
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['r2'])
+  })
+
+  // The chain must not tear: r3 keeps pointing at r1 after r2 is skipped,
+  // instead of becoming an orphan that blame can no longer walk.
+  it('does not tear the chain when a middle revision was removed', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100 }),
+        rev({ id: 'r2', createdAt: 200, parentRevs: ['r1'] }),
+        rev({ id: 'r3', createdAt: 300, parentRevs: ['r2'] }),
+      ],
+      new Map(),
+      new Set(['r2']),
+    )
+    expect(pages[0].head.id).toBe('r3')
+    expect(pages[0].revisions.map((r) => r.id)).toEqual(['r3', 'r1'])
+    expect(pages[0].revisions[0].parentRevs).toEqual(['r1'])
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['r3'])
+  })
+
+  // Fails without collecting parent references over *all* revisions: r1 would
+  // look like a leaf again because only its removed child pointed at it.
+  it('does not mistake the removed revision’s parent for a leaf', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100 }),
+        rev({ id: 'r2', createdAt: 200, parentRevs: ['r1'] }),
+        rev({ id: 'r3', createdAt: 300, parentRevs: ['r2'] }),
+      ],
+      new Map(),
+      new Set(['r2']),
+    )
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['r3'])
+  })
+
+  it('bridges two consecutive removals to the first surviving ancestor', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100 }),
+        rev({ id: 'r2', createdAt: 200, parentRevs: ['r1'] }),
+        rev({ id: 'r3', createdAt: 300, parentRevs: ['r2'] }),
+        rev({ id: 'r4', createdAt: 400, parentRevs: ['r3'] }),
+      ],
+      new Map(),
+      new Set(['r2', 'r3']),
+    )
+    expect(pages[0].head.id).toBe('r4')
+    expect(pages[0].revisions[0].parentRevs).toEqual(['r1'])
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['r4'])
+  })
+
+  it('keeps a merge a single leaf when one parent was removed', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100 }),
+        rev({ id: 'mine', createdAt: 200, parentRevs: ['r1'] }),
+        rev({ id: 'theirs', createdAt: 250, parentRevs: ['r1'] }),
+        rev({ id: 'merge', createdAt: 300, parentRevs: ['mine', 'theirs'] }),
+      ],
+      new Map(),
+      new Set(['mine']),
+    )
+    expect(pages[0].head.id).toBe('merge')
+    // The removed first parent bridged to r1; the surviving parent stays.
+    expect(pages[0].revisions[0].parentRevs).toEqual(['r1', 'theirs'])
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['merge'])
+  })
+
+  it('drops a page once its only revision was removed', () => {
+    expect(buildPages([rev({ id: 'r1' })], new Map(), new Set(['r1']))).toEqual([])
+  })
+
+  it('terminates on a parent cycle between removed revisions', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'a', createdAt: 100, parentRevs: ['b'] }),
+        rev({ id: 'b', createdAt: 200, parentRevs: ['a'] }),
+        rev({ id: 'c', createdAt: 300, parentRevs: ['a'] }),
+      ],
+      new Map(),
+      new Set(['a', 'b']),
+    )
+    expect(pages[0].head.id).toBe('c')
+    expect(pages[0].revisions[0].parentRevs).toEqual([])
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['c'])
+  })
+
+  it('keeps a predecessor that was never loaded as a missing link', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100, parentRevs: ['missing'] }),
+        rev({ id: 'r2', createdAt: 200, parentRevs: ['r1'] }),
+        rev({ id: 'r3', createdAt: 300, parentRevs: ['r2'] }),
+      ],
+      new Map(),
+      new Set(['r2']),
+    )
+    // r3 bridges past the removed r2 to r1; the unknown link on r1 survives.
+    expect(pages[0].revisions.find((r) => r.id === 'r1')?.parentRevs).toEqual(['missing'])
+    expect(pages[0].revisions.find((r) => r.id === 'r3')?.parentRevs).toEqual(['r1'])
+  })
+
+  it('leaves revisions and parents untouched when nothing was removed', () => {
+    const revisions = [
+      rev({ id: 'r1', createdAt: 100 }),
+      rev({ id: 'r2', createdAt: 200, parentRevs: ['r1'] }),
+    ]
+    const pages = buildPages(revisions, new Map(), new Set())
+    expect(pages[0].revisions[0]).toBe(revisions[1])
+  })
+})
+
 describe('buildTree', () => {
   it('nests children under their parent page and counts the depth', () => {
     const pages = buildPages([
