@@ -30,17 +30,41 @@ const { clearAllSpaces, getSpaceStore } = await import('./space-store')
 const RELAY = 'wss://relay.test'
 const GROUP = 'engineering'
 
-function revision(id: string, slug: string): Event {
+function revision(
+  id: string,
+  slug: string,
+  parentRevs: string[] = [],
+  pubkey = 'alice',
+  createdAt = 1000,
+): Event {
   return {
     id,
-    pubkey: 'alice',
-    created_at: 1000,
+    pubkey,
+    created_at: createdAt,
     kind: KINDS.PAGE_REVISION,
     tags: [
       ['h', GROUP],
       ['d', slug],
+      ...parentRevs.map((parent) => ['parent-rev', parent]),
     ],
     content: '# secret',
+    sig: 'sig',
+  } as Event
+}
+
+/** A NIP-09 request for the given revision ids. */
+function deletion(id: string, pubkey: string, targets: string[]): Event {
+  return {
+    id,
+    pubkey,
+    created_at: 2000,
+    kind: KINDS.DELETION_REQUEST,
+    tags: [
+      ['h', GROUP],
+      ['k', String(KINDS.PAGE_REVISION)],
+      ...targets.map((target) => ['e', target]),
+    ],
+    content: '',
     sig: 'sig',
   } as Event
 }
@@ -301,6 +325,114 @@ describe('clearAllSpaces', () => {
     clearAllSpaces()
 
     expect(listener).toHaveBeenCalled()
+    unsubscribe()
+  })
+})
+
+describe('NIP-09 deletion requests', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    relay.subs = []
+    relay.epoch = 1
+    relay.auth = 'ok'
+    relay.ready = true
+    clearAllSpaces()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('reads kind 5 for the group on its own subscription', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    const requests = relay.subs.filter((sub) => sub.filter.kinds?.includes(KINDS.DELETION_REQUEST))
+    expect(requests).toHaveLength(1)
+    expect(requests[0].filter['#h']).toEqual([GROUP])
+    unsubscribe()
+  })
+
+  it('skips a revision its author asked to remove and bridges the successor', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+    deliver(revision('r1', 'page', [], 'alice', 100))
+    deliver(revision('r2', 'page', ['r1'], 'alice', 200))
+    deliver(revision('r3', 'page', ['r2'], 'alice', 300))
+
+    deliver(deletion('d1', 'alice', ['r2']))
+
+    const page = store.getSnapshot().pages[0]
+    expect(page.head.id).toBe('r3')
+    expect(page.revisions.map((r) => r.id)).toEqual(['r3', 'r1'])
+    expect(page.revisions[0].parentRevs).toEqual(['r1'])
+    expect(store.getSnapshot().removedRevisions.map((r) => r.id)).toEqual(['r2'])
+    unsubscribe()
+  })
+
+  it('ignores a request from someone other than the revision’s author', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+    deliver(revision('r1', 'page', [], 'alice', 100))
+    deliver(revision('r2', 'page', ['r1'], 'alice', 200))
+
+    deliver(deletion('d1', 'bob', ['r2']))
+
+    const page = store.getSnapshot().pages[0]
+    expect(page.revisions.map((r) => r.id)).toEqual(['r2', 'r1'])
+    expect(store.getSnapshot().removedRevisions).toEqual([])
+    unsubscribe()
+  })
+
+  // The tombstone has to be re-derived from the relay, not kept in local state:
+  // a rebuild clears everything collected, and only the re-delivered kind 5
+  // brings the removal back.
+  it('survives a rebuild when the kind 5 is delivered again', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+    deliver(revision('r1', 'page', [], 'alice', 100))
+    deliver(revision('r2', 'page', ['r1'], 'alice', 200))
+    const request = deletion('d1', 'alice', ['r1'])
+    deliver(request)
+    expect(store.getSnapshot().pages[0].revisions.map((r) => r.id)).toEqual(['r2'])
+
+    relay.epoch = 2
+    store.checkConnection()
+    expect(store.getSnapshot().pages).toEqual([])
+
+    deliver(revision('r1', 'page', [], 'alice', 100))
+    deliver(revision('r2', 'page', ['r1'], 'alice', 200))
+    deliver(request)
+
+    const page = store.getSnapshot().pages[0]
+    expect(page.revisions.map((r) => r.id)).toEqual(['r2'])
+    expect(page.revisions[0].parentRevs).toEqual([])
+    unsubscribe()
+  })
+
+  it('still removes an admin-deleted revision outright', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+    deliver(revision('r1', 'page', [], 'alice', 100))
+    deliver(revision('r2', 'page', ['r1'], 'alice', 200))
+
+    store.forget('r2')
+
+    expect(store.getSnapshot().pages[0].revisions.map((r) => r.id)).toEqual(['r1'])
+    expect(store.getSnapshot().pages[0].head.id).toBe('r1')
+    unsubscribe()
+  })
+
+  it('closes the loading gate only once all five subscriptions answered', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+    expect(relay.subs).toHaveLength(5)
+
+    for (let index = 0; index < 4; index += 1) relay.subs[index].onEose()
+    expect(store.getSnapshot().loading).toBe(true)
+
+    relay.subs[4].onEose()
+    expect(store.getSnapshot().loading).toBe(false)
     unsubscribe()
   })
 })

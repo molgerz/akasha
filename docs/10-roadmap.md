@@ -224,7 +224,6 @@ As of 2026-09-07, found while comparing the docs against the code:
 | IndexedDB cache: instant rendering on reload, offline reading | [01](01-architecture.md), [07](07-tech-stack.md) |
 | End-to-end tests (Playwright), including the colour-mode regression | [07](07-tech-stack.md), [12](12-theming.md) |
 | `9021` join flow for relays without auto-join | [04](04-permissions-nip29.md) |
-| Deleting your own revision (NIP-09 `kind 5`) | [05](05-versioning-history.md) |
 | Hiding a whole page (tombstone) | [05](05-versioning-history.md) |
 | Writing `previous` timeline references | [02](02-data-model-events.md) |
 | Sidebar entries "all pages", "recently changed", "space settings" | [06](06-ui-information-architecture.md) |
