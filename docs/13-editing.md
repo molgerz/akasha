@@ -3,8 +3,9 @@
 **Decision:** the editor has no Write/Preview switch, because there is nothing
 to switch between. The text is drawn the way it will be read while it is being
 typed. Typing `# ` and a space sizes the line as a heading on the spot; `- `
-turns into a bullet; `**bold**` goes bold. The Markdown markers are only
-visible on the line the cursor is on.
+turns into a bullet; `**bold**` goes bold; a pipe table is drawn as a table and
+an `![alt](url)` as the picture. The Markdown markers are only visible on the
+line the cursor is on.
 
 **Why:** this is the thing a rich-text wiki gets right that a Markdown box does
 not.
@@ -53,8 +54,12 @@ Three deliberate exceptions:
   a list when you leave it: it reads as "it did not work". `- ` and `[ ]` are
   one marker here, so the dash goes with the box; Backspace takes the whole
   marker and leaves an ordinary bullet behind.
-- **An image stays as written** — `![alt](url)`. Drawn as its alt text alone it
-  would look like a paragraph that had lost its picture.
+- **A table reveals as a whole, not line by line.** Columns only line up if
+  every row is laid out against all the others, so a table is drawn as one block
+  and gives its source back as one block the moment the cursor is anywhere
+  inside it. Half a table over half its source would be neither. An image is a
+  single inline construct and needs no exception: it is drawn off the active
+  line and shows its Markdown on it, like everything else.
 
 The indentation of a nested list item is markup too, so the active line shows
 it again — the item shifts by the two spaces it is written with, the way a
@@ -181,6 +186,30 @@ a line of text is not a divider at all but a Setext H2 for the line above — th
 trap this app closes by not recognising Setext headings. See
 `src/ui/markdown-flavour.ts`.
 
+### Tables and images
+
+| Type | Result |
+|---|---|
+| `| a | b |` with a `---` line under it | Drawn as the table it is: a header band, one rule under each row, and the column alignment the delimiter row asks for with `---`, `:---`, `---:` or `:---:` |
+| `![alt](url)` | The picture, loaded from wherever it points |
+
+A table is the one construct whose unit of reveal is the construct and not the
+line — see the exceptions above. It is drawn by a `StateField` of its own in
+`src/ui/markdown-live.ts` rather than by the line plugin, because replacing it
+spans line breaks and a `ViewPlugin` is not allowed to do that; the field is
+told about focus through `EditorView.focusChangeEffect`, because a state field
+cannot see the view.
+
+The columns are a CSS grid with the same count and the same fractions on every
+row, which is what lines them up — a `table` element's own layout does not
+survive being put inside a line of text. The cells are read the way a paragraph
+is: `**bold**`, `` `code` `` and a mention become the same thing here as anywhere
+else, and a link shows its label with its target hidden as markup.
+
+An image is drawn the way the page draws it and is loaded from wherever it
+points — there is no gate on the origin any more, in the editor as little as on
+the page. What that costs is written down in docs/09-security-privacy.md
+
 Code inside a fence is coloured, but by a small style bound to the theme tokens
 (`codeHighlight` in `src/ui/MarkdownEditor.tsx`), not by CodeMirror's default
 highlight style. That default also colours headings and bold text, which would
@@ -232,6 +261,37 @@ first. Ranking is exact name, then prefix, then substring, then keyword, so
 A lone `:` opens nothing. `:` is punctuation far more often than it is the start
 of an emoji, and the boundary guard also keeps the dropdown out of `https://`
 and out of `12:30`.
+
+### Insert menu — `/`
+
+`/` at the start of a line opens a menu of blocks: **Table**, **Image /
+attachment**, **Code block**, **Quote** and **Divider**. It is the editor's
+third dropdown, built on the same autocompletion as `@` and `:` — one popup
+theme and one keyboard model, not a menu of its own.
+
+It exists for the one piece of Markdown that is genuinely hard to type by hand:
+the **pipe table**. The entry writes a 2×2 skeleton with a blank line above it
+and puts the cursor in the first header cell, so the next keystrokes are cell
+contents; the rendered page then treats it like any other GFM table
+(`src/ui/editor-slash.ts` exports the skeleton as `TABLE_SKELETON`). The other
+entries insert their block and leave the cursor where the writing continues —
+the code entry lands on the fence's language line, the divider after the rule.
+
+`/` only opens where the slash is the **first character of its line**. `@`
+stays out of e-mails and `:` out of `https://` for the same reason: a dropdown
+that fires in the middle of a sentence is worse than none. It also stays out of
+inline code, a fenced block and a URL, and typing after the slash narrows the
+list — `/ta` is Table, `/img` the attachment entry, because each entry carries
+aliases.
+
+**The attachment entry is the Blossom upload's way back in.** Picking it opens
+the file picker and removes the typed `/image`; the file is uploaded with the
+same kind `24242` authorisation as before and the resulting `![alt](url)` (a
+link for anything that is not an image) is inserted at the cursor. Dragging a
+file onto the editor runs the same upload. Without `VITE_BLOSSOM_SERVER` the
+entry cannot open a picker that could only fail, so it shows the reason where
+the upload note sits — the same promise as before, kept by the menu instead of
+by a disabled button.
 
 ## Why the write and read views must not drift
 
@@ -335,16 +395,16 @@ there for the second question — "how do I get a quote?" — not the first one.
 
 ## Open
 
-- **`/` at the start of a line → insert menu.** A wiki usually opens a menu for
-  tables, images and layouts there. Not built. This is also where
-  attachments should come back: since the editor was stripped to title +
-  Markdown ([10](10-roadmap.md), phase 6) the Blossom upload in
-  `src/nostr/blossom.ts` has no way in except drag & drop.
-- **Tables.** Rendered ([`Markdown.tsx`](../src/ui/Markdown.tsx) handles GFM
-  tables, wide ones scroll), but there is no help writing one — a pipe table is
-  the one piece of Markdown syntax that really is hard to type by hand, and
-  doing it properly means column-aware editing, which belongs with the insert
-  menu.
+- **Tables.** The `/` menu writes the skeleton, the editor draws the table
+  from it and [`Markdown.tsx`](../src/ui/Markdown.tsx) renders GFM tables, wide
+  ones scrolling. What is still missing is help *editing* one: moving between
+  cells, keeping the pipes aligned and adding a column — today a table hands its
+  source back as a whole and is edited as the text it is. A pipe table is the one
+  piece of Markdown that really is hard by hand, and column-aware editing is the
+  half of it the menu does not cover.
+- **Macros and layouts.** The insert menu (`/table`, `/image`, `/code`,
+  `/quote`, `/divider`) holds the blocks the plain editor needs; the wiki-style
+  macro and layout entries are still not built.
 - **Auto-replacing a typed-out `:smile:`.** Only the dropdown converts a
   shortcode today. Doing it on the text as well risks firing inside things like
   `a:b:c`, so it waits for a reason.

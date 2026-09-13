@@ -5,7 +5,6 @@ import { Fragment, useEffect, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ThemedToken } from 'shiki'
 import { normalizeSlug } from '../nostr/kinds'
-import { isOwnAttachment } from '../nostr/blossom'
 import { mentionPubkey } from '../nostr/mentions'
 import { useProfile } from '../nostr/profile-store'
 import { shortNpub, toNpub } from '../nostr/profile'
@@ -106,44 +105,25 @@ const COMPACT: Scale = {
 }
 
 /**
- * Images from foreign sources are only loaded on click: otherwise an embedded
- * image tells a foreign server who reads which page and when. Attachments from
- * our own Blossom server load directly.
- * docs/09-security-privacy.md
+ * An image, loaded directly.
+ *
+ * It used to be different: an image from a foreign host was only fetched once
+ * the reader clicked it, because loading it tells that host who is reading
+ * which page, and when. That is still true, and it is still the cost — the gate
+ * was dropped because a page whose pictures are not there until every one of
+ * them is clicked is not the page, and this is a wiki: the content *is* the
+ * point. The trade is written down in docs/09-security-privacy.md.
  */
-function SafeImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
-  const [allowed, setAllowed] = useState(false)
+function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
   if (!src) return null
-
-  const trusted = isOwnAttachment(src) || src.startsWith('/') || src.startsWith('data:image/')
-  if (trusted || allowed) {
-    return (
-      <img
-        src={src}
-        alt={alt ?? ''}
-        title={title}
-        loading="lazy"
-        className="my-6 max-w-full rounded-lg border border-line"
-      />
-    )
-  }
-
-  let host = 'a foreign source'
-  try {
-    host = new URL(src).host
-  } catch {
-    /* relative or broken URL */
-  }
-
   return (
-    <button
-      type="button"
-      onClick={() => setAllowed(true)}
-      className="my-6 block rounded-lg border border-dashed border-line px-3.5 py-2.5 text-left text-xs text-fg-muted hover:border-line-strong"
-    >
-      Load image from {host}
-      {alt ? <span className="block text-fg-subtle">{alt}</span> : null}
-    </button>
+    <img
+      src={src}
+      alt={alt ?? ''}
+      title={title}
+      loading="lazy"
+      className="my-6 max-w-full rounded-lg border border-line"
+    />
   )
 }
 
@@ -413,7 +393,7 @@ export function Markdown({
             <blockquote className={cx(s.quote, s.measure, className)} {...props} />
           ),
           img: ({ src, alt, title }) => (
-            <SafeImage src={typeof src === 'string' ? src : undefined} alt={alt} title={title} />
+            <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} title={title} />
           ),
           // A wide table may exceed the measure — but then it scrolls on its
           // own instead of stretching the page.

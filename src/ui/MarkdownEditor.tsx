@@ -21,6 +21,7 @@ import { tags } from '@lezer/highlight'
 import { useTheme } from '../theme/theme'
 import { liveMarkdown } from './markdown-live'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
+import { slashInsertCompletion } from './editor-slash'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 
 /**
@@ -215,6 +216,46 @@ function editorTheme(dark: boolean) {
       },
       '.cm-md-hr-raw': { color: 'var(--fg-subtle)' },
 
+      // — tables and images —
+      // The same drawing as the page: one rule under each row, a header band,
+      // `px-3 py-2` cells at 14px, a bordered card around the table, and a
+      // picture with the same border and radius. Read against `PAGE` and the
+      // `table`/`th`/`td`/`img` components in `src/ui/Markdown.tsx` — when one
+      // of the two changes, the other has to follow.
+      '.cm-md-table': {
+        margin: '1.5rem 0',
+        border: '1px solid var(--line)',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        width: '100%',
+        boxSizing: 'border-box',
+        // The line this widget sits in is `pre-wrap`; a grid inside it would
+        // inherit that and break on every newline of its own DOM.
+        whiteSpace: 'normal',
+      },
+      '.cm-md-table-row': { display: 'grid' },
+      '.cm-md-table-cell': {
+        padding: '0.5rem 0.75rem',
+        fontSize: '14px',
+        lineHeight: '1.5',
+        borderBottom: '1px solid var(--line)',
+        color: 'var(--fg-muted)',
+        overflowWrap: 'anywhere',
+      },
+      '.cm-md-table-head .cm-md-table-cell': {
+        backgroundColor: 'var(--surface-1)',
+        color: 'var(--fg)',
+        fontWeight: '600',
+        textAlign: 'left',
+      },
+      '.cm-md-table-row:last-child .cm-md-table-cell': { borderBottom: 'none' },
+      '.cm-md-image': { display: 'block', margin: '1.5rem 0', whiteSpace: 'normal' },
+      '.cm-md-image img': {
+        display: 'block',
+        maxWidth: '100%',
+        borderRadius: '8px',
+        border: '1px solid var(--line)',
+      },
       // — mentions —
       // A chip, not a link: it names a person, and clicking it in the editor
       // should place the cursor rather than navigate.
@@ -227,7 +268,7 @@ function editorTheme(dark: boolean) {
         fontSize: '0.95em',
       },
 
-      // — the @ and : dropdowns —
+      // — the @, : and / dropdowns —
       // CodeMirror's default popup is styled for a code editor and stays light
       // in dark mode. It gets the app's tokens instead. docs/12-theming.md
       '.cm-tooltip.cm-tooltip-autocomplete': {
@@ -445,6 +486,8 @@ type Props = {
   handleRef?: { current: EditorHandle | null }
   /** files dropped onto the editor */
   onDropFiles?: (files: File[]) => void
+  /** the `/` menu's attachment entry — opens the file picker */
+  onAttach?: () => void
 }
 
 export function MarkdownEditor({
@@ -452,9 +495,10 @@ export function MarkdownEditor({
   onChange,
   ariaLabel,
   members,
-  placeholder = 'Start writing. “# ” makes a heading, “- ” a list, “@” mentions somebody.',
+  placeholder = 'Start writing. “# ” makes a heading, “- ” a list, “@” mentions somebody, “/” inserts a table or a file.',
   handleRef,
   onDropFiles,
+  onAttach,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
@@ -462,6 +506,11 @@ export function MarkdownEditor({
   onChangeRef.current = onChange
   const onDropRef = useRef(onDropFiles)
   onDropRef.current = onDropFiles
+  // The completion source is captured when the editor is built, once. Reading
+  // the callback through a ref keeps a later session (an account switch, a
+  // different Blossom server) from being frozen into the first render.
+  const onAttachRef = useRef(onAttach)
+  onAttachRef.current = onAttach
   // Read through a ref, so members arriving from the relay after mount are
   // offered without rebuilding the editor.
   const membersRef = useRef(members ?? [])
@@ -508,7 +557,11 @@ export function MarkdownEditor({
         normaliseTaskMarker,
         liveMarkdown,
         autocompletion({
-          override: [mentionCompletion(() => membersRef.current), emojiCompletion],
+          override: [
+            mentionCompletion(() => membersRef.current),
+            emojiCompletion,
+            slashInsertCompletion(() => onAttachRef.current?.()),
+          ],
           icons: false,
           activateOnTyping: true,
         }),
