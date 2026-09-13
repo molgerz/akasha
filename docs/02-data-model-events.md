@@ -37,6 +37,18 @@ kind `24242` event: the server verifies a signature, not a password. Configured
 via `VITE_BLOSSOM_SERVER`; without it the `/` menu's attachment entry says so
 rather than failing silently ([13](13-editing.md)).
 
+**A blob belongs to a group (CON-26).** The upload token carries the space in an
+`h` tag and the content hash in an `x` tag, and the server files the blob under
+that group. Reading it again needs a `t=get` token from a key that is a member
+of the group — so an attachment in a private space is no longer readable by
+whoever happens to know its hash. The app fetches those blobs with the token and
+draws an object URL; a picture on a foreign host is left alone and stays direct.
+The server's own service identity is a member of every space that stores files:
+`VITE_BLOSSOM_SERVICE_PUBKEY` when a space is created in the app, or
+`BLOSSOM_SEC` in [`scripts/dev-group-seed.sh`](../scripts/dev-group-seed.sh)
+locally. Details in [04](04-permissions-nip29.md) and
+[09](09-security-privacy.md).
+
 A tiny server for local development ships with the repo:
 `node scripts/dev-blossom.mjs`.
 

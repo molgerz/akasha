@@ -8,6 +8,7 @@ import type { Signer } from '../nostr/signer'
 import { parseProfile, toNpub } from '../nostr/profile'
 import { cacheProfile } from '../nostr/profile-store'
 import { clearAllSpaces } from '../nostr/space-store'
+import { attachmentLoaderFor, setAttachmentLoader } from '../nostr/attachment-access'
 import type { Profile } from '../nostr/profile'
 
 const STORAGE_KEY = 'nc-pubkey'
@@ -153,6 +154,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [loadProfile])
+
+  // Attachment reads are signed with the session's key (CON-26). This is the
+  // one place that decides whether a protected blob can be fetched at all;
+  // signing out takes the credential away with the session.
+  const activeSigner = session.status === 'signed-in' ? session.signer : null
+  useEffect(() => {
+    setAttachmentLoader(activeSigner ? attachmentLoaderFor(activeSigner) : null)
+    return () => setAttachmentLoader(null)
+  }, [activeSigner])
 
   // Follow the other tabs. The storage event fires only in the tabs that did
   // not make the change, which is exactly the reach this needs. Best effort,

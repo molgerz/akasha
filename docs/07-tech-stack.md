@@ -25,8 +25,10 @@
 ## Configuration
 
 `.env.example` documents the switches: `VITE_RELAY_URL` for the group relay,
-`VITE_PROFILE_RELAYS` for the relays profiles (kind 0) are fetched from, and
-`VITE_BLOSSOM_SERVER` for attachments. The profile relays are needed because a
+`VITE_PROFILE_RELAYS` for the relays profiles (kind 0) are fetched from,
+`VITE_BLOSSOM_SERVER` for attachments and `VITE_BLOSSOM_SERVICE_PUBKEY` for the
+Blossom server's own identity, which has to be a group member for attachment
+reads to be checked (CON-26). The profile relays are needed because a
 NIP-29 relay does not accept kind 0 at all — every event there needs an `h` tag.
 Without configuration the app shows npubs instead of names, which is more honest
 than an invented name.

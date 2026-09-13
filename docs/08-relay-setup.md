@@ -115,7 +115,9 @@ Two quirks that cost time:
 
 - Put the relay behind TLS (`wss://`), because an HTTPS page may not open
   `ws://` (except for `localhost`).
-- The web app is a static bundle on any host.
+- Attachments need the same boundary as the group: the file server must check
+  membership before it hands a blob back (CON-26). The development server does;
+  which server runs in production is still open, see CON-4.
 - Backup = event export as JSONL. Because everything is signed, an export is
   verifiably restorable on another relay. That is also the migration strategy:
   moving a space means copying events.

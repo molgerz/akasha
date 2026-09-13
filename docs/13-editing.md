@@ -450,6 +450,12 @@ entry cannot open a picker that could only fail, so it shows the reason where
 the upload note sits — the same promise as before, kept by the menu instead of
 by a disabled button.
 
+The upload files the blob under the space (an `h` tag) and reading it back needs
+a `t=get` token from a member, so an attachment in a private space is not public
+(CON-26). In the editor that means a blob on our own Blossom server is fetched
+with that token and drawn from an object URL; a picture on a foreign host is
+drawn directly, as before. src/nostr/attachment-access.ts
+
 ## Why the write and read views must not drift
 
 The sizes in `editorTheme` (`src/ui/MarkdownEditor.tsx`) mirror `PAGE` in

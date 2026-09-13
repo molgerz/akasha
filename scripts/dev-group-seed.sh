@@ -52,15 +52,25 @@ if [[ ! -f "$KEYFILE" ]]; then
   {
     echo "ALICE_SEC=$(nak key generate </dev/null)"
     echo "BOB_SEC=$(nak key generate </dev/null)"
+    echo "BLOSSOM_SEC=$(nak key generate </dev/null)"
   } > "$KEYFILE"
   echo "new throwaway keys created in $KEYFILE"
 fi
 # shellcheck source=/dev/null
 source "$KEYFILE"
+# Older key files predate the Blossom service identity (CON-26). Add it rather
+# than regenerate: the app's memberships would not survive new keys.
+if [[ -z "${BLOSSOM_SEC:-}" ]]; then
+  echo "BLOSSOM_SEC=$(nak key generate </dev/null)" >> "$KEYFILE"
+  # shellcheck source=/dev/null
+  source "$KEYFILE"
+  echo "added a Blossom service key to $KEYFILE"
+fi
 # Close stdin explicitly: otherwise nak commands read from stdin and block
 # when the script runs out of a pipe.
 ALICE_PK=$(nak key public "$ALICE_SEC" </dev/null)
 BOB_PK=$(nak key public "$BOB_SEC" </dev/null)
+BLOSSOM_PK=$(nak key public "$BLOSSOM_SEC" </dev/null)
 
 ADDRESS=$(nak encode naddr -d "$GROUP_ID" -k 39000 -a "$RELAY_PK" -r "$RELAY" </dev/null)
 
@@ -78,6 +88,7 @@ run() { # run <seconds> <command...>
 echo "group:    $GROUP_ID"
 echo "admin:    $ALICE_PK (alice)"
 echo "member:   $BOB_PK (bob)"
+echo "service:  $BLOSSOM_PK (blossom, reads 39002 for attachment rights)"
 echo
 
 # create-group without --fpa: the command hangs with --fpa because it reads
@@ -105,6 +116,14 @@ echo "3) add bob as a member (nak group put-user)"
 OUT=$(run 25 nak group put-user "${NAK_AUTH[@]}" --pubkey "$BOB_PK" "$ADDRESS") || true
 grep -q '"kind":9000' <<<"$OUT" || { echo "   ERROR: $(tail -1 <<<"$OUT")"; exit 1; }
 echo "   added"
+
+# The Blossom server checks attachment reads against 39002, and a private
+# group's member list is only served to a member — so its service identity has
+# to be one. scripts/dev-blossom.mjs reads BLOSSOM_SEC from the same key file.
+echo "3b) add the Blossom service identity as a member"
+OUT=$(run 25 nak group put-user "${NAK_AUTH[@]}" --pubkey "$BLOSSOM_PK" "$ADDRESS") || true
+grep -q '"kind":9000' <<<"$OUT" || { echo "   ERROR: $(tail -1 <<<"$OUT")"; exit 1; }
+echo "   blossom service added (BLOSSOM_SEC in $KEYFILE)"
 
 # Fetch the head of a slug's revision chain, so that a second run of the
 # script continues the chain instead of creating a second root (which the app

@@ -114,9 +114,15 @@ Worth knowing, because the flags alone do not prove it — Buzz notes that
 channels stay readable for non-members at runtime. What a flag means is decided
 by the relay implementation, so it has to be measured, not assumed.
 
-**What this does not cover:** attachments. They live on a Blossom server outside
-the group model, and its read path checks nothing — see
-[09](09-security-privacy.md).
+**Attachments are inside the boundary too (CON-26).** A Blossom server does
+not know NIP-29 by itself, so the development server now carries the rule
+itself: an upload token must name its group (`h`), and a read must present a
+`t=get` token whose key is a member of one of the groups the blob is filed
+under. The server asks the relay for that group's `39002` as a *service
+identity*, because a private group's member list is only served to a member —
+which is why the service key has to be one. Foreign image hosts in a page are
+still outside this and stay unprotected; see [09](09-security-privacy.md) and
+[02](02-data-model-events.md).
 
 **Superseded:** an earlier version of this document chose `public` + `open` with
 auto-join ("Open groups auto-join the author when posting"). That path is gone

@@ -36,6 +36,7 @@
 |---|---|
 | XSS through Markdown from arbitrary npubs | `rehype-sanitize` with a strict allowlist, no `dangerouslySetInnerHTML`, no raw HTML, no `javascript:` links |
 | Images/iframes used as trackers | **Accepted trade:** every image is loaded directly, whatever host it points at — so a host learns the reader's IP, which page is being read and when, and can count reads. No iframes. See "Images are loaded directly" below |
+| Attachments in a private space read by a non-member | The Blossom server requires a `t=get` token and checks the reader's key against the group's `39002`, as a service identity; the app fetches with that token and draws an object URL. A picture on a foreign host is outside this. See "Attachments and the group boundary" below |
 | Forged `h` tags (an event from another group smuggled in) | Checked after loading: `h` must match the open space, otherwise the event is discarded |
 | Forgetting to verify signatures | Verification is enforced in the data layer, not optional per call |
 | Impersonation via display names | The npub is the truth and stays one hover or one click away — the author tooltip, a revision's Details view, `/settings/profile`; the member badge only appears for entries in `39002` |
@@ -63,6 +64,35 @@ the deployment, and the images that matter are attachments on our own Blossom
 server. Bringing the gate back for foreign origins is a small change: the two
 places that draw an image are `MarkdownImage` in `src/ui/Markdown.tsx` and
 `ImageWidget` in `src/ui/markdown-live.ts`.
+
+## Attachments and the group boundary
+
+An attachment is not in the event — it is a file on a Blossom server, named by
+its sha256 in the Markdown. That hash is not a secret: it is derived from the
+content, so for a guessable file it is guessable. A blob was therefore readable
+by anyone who had the URL, whatever the group's `private` flag said. For a
+private space that defeated the point, and CON-26 closed it.
+
+The rule now sits on the file server, because nothing else can see a blob:
+an upload token files the blob under a group (an `h` tag) and is bound to its
+content (an `x` tag); a read must present a `t=get` token, and the token's key
+has to be a member of one of the groups the blob is filed under. Membership is
+asked of the relay as a *service identity*, because a private group's `39002`
+is not served to an anonymous reader — so that identity has to be a member of
+every space that stores files. The app signs the `t=get` token with the
+session's key, fetches the blob with it and hands the renderer an object URL,
+because a plain `<img src>` cannot send an `Authorization` header.
+
+**What this does not cover:** a page may embed a picture from any host, and that
+host is not ours to protect — it still learns who is reading, exactly as the
+section above describes. Only blobs on the configured `VITE_BLOSSOM_SERVER`
+are covered.
+
+**Still open (CON-4):** the shipped server is deliberately a development one.
+Under its own domain, the same rule has to live in whatever serves the files in
+production — an authorising proxy in front of a stock Blossom server, or the
+media endpoints of a relay that already knows the community (as
+[block/buzz](https://github.com/block/buzz) does).
 
 ## Privacy note for users
 

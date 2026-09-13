@@ -171,7 +171,7 @@ export function PageEditor({
     setUploading(true)
     try {
       for (const file of files) {
-        const result = await uploadAttachment(session.signer, file)
+        const result = await uploadAttachment(session.signer, file, { groupId })
         if (!result.ok) {
           setUploadNote(`${file.name}: ${result.reason}`)
           return
