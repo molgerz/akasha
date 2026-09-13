@@ -239,6 +239,12 @@ function editorTheme(dark: boolean) {
         whiteSpace: 'normal',
       },
       '.cm-md-table-row': { display: 'grid', position: 'relative' },
+      // A line that holds a block — a table or a picture — owns its margins
+      // instead of letting them collapse out of it: as an escaped margin the
+      // card's 1.5rem of air above read as a blank line the writer cannot put
+      // the caret in, and the editor's own idea of the line's height was short
+      // by that much.
+      '.cm-line:has(> .cm-md-table), .cm-line:has(> .cm-md-image)': { display: 'flow-root' },
       '.cm-md-table-cell': {
         position: 'relative',
         padding: '0.5rem 0.75rem',
@@ -357,12 +363,14 @@ function editorTheme(dark: boolean) {
       '.cm-md-table-menu-current': { fontWeight: '600' },
 
       // — images —
-      // `inline-block`, not `block`: the wrapper is what a click selects and
-      // what the resize handle is pinned to, so it has to be the size of the
-      // picture and not of the measure.
+      // A block, and `fit-content` wide: a picture is a block of its own and
+      // nothing is written beside it, but the box a click selects and the
+      // resize handle is pinned to still has to be the size of the picture and
+      // not of the measure.
       '.cm-md-image': {
         position: 'relative',
-        display: 'inline-block',
+        display: 'block',
+        width: 'fit-content',
         maxWidth: '100%',
         margin: '1.5rem 0',
         whiteSpace: 'normal',

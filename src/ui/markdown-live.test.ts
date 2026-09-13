@@ -4,7 +4,7 @@ import { nip19 } from 'nostr-tools'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { liveMarkdown } from './markdown-live'
+import { edgeInsert, liveMarkdown } from './markdown-live'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 
 // A mention chip warms the profile cache through the real store, which opens a
@@ -62,6 +62,63 @@ function lineClasses(view: EditorView, index: number): string {
   return view.contentDOM.children[index]?.className ?? ''
 }
 
+describe('typing at the edge of a block', () => {
+  const TABLE = '| Name | Value |\n| --- | ---: |\n| a | 1 |'
+
+  it('puts text typed after a table on a new line, not into its last row', () => {
+    const view = mount(TABLE)
+    const end = view.state.doc.length
+    // a character after the closing pipe becomes another column of that one row
+    // a blank line, not just a new one: a plain line under a row is a row
+    expect(edgeInsert(view.state, end, end, 'x')).toEqual({ from: end, to: end, insert: '\n\nx' })
+    view.destroy()
+  })
+
+  it('puts text typed before a table on a new line above it', () => {
+    const view = mount(TABLE)
+    expect(edgeInsert(view.state, 0, 0, 'x')).toEqual({ from: 0, to: 0, insert: 'x\n' })
+    view.destroy()
+  })
+
+  it('does the same for a picture alone on its line', () => {
+    const view = mount('![dot](https://example.com/a.png)')
+    const end = view.state.doc.length
+    expect(edgeInsert(view.state, end, end, 'x')).toEqual({ from: end, to: end, insert: '\nx' })
+    expect(edgeInsert(view.state, 0, 0, 'x')).toEqual({ from: 0, to: 0, insert: 'x\n' })
+    view.destroy()
+  })
+
+  it('leaves an ordinary line, and a line with prose on it, alone', () => {
+    const prose = mount('see ![dot](https://example.com/a.png) now')
+    const end = prose.state.doc.length
+    expect(edgeInsert(prose.state, end, end, 'x')).toBeNull()
+    expect(edgeInsert(prose.state, 0, 0, 'x')).toBeNull()
+    prose.destroy()
+
+    const plain = mount('hello')
+    expect(edgeInsert(plain.state, 0, 0, 'x')).toBeNull()
+    expect(edgeInsert(plain.state, 5, 5, 'x')).toBeNull()
+    // …and a selection is never rewritten
+    expect(edgeInsert(plain.state, 0, 5, 'x')).toBeNull()
+    plain.destroy()
+  })
+
+  it('is wired into the editor, so typing really goes through it', () => {
+    // jsdom does not drive CodeMirror's own text input, so the handler the
+    // editor would call is called here — the registration is what is checked,
+    // and that it inserts what the rule says.
+    const view = mount(TABLE)
+    const handlers = view.state.facet(EditorView.inputHandler)
+    const end = view.state.doc.length
+    view.dispatch({ selection: { anchor: end } })
+    const handled = handlers.some(
+      (handler) => handler(view, end, end, 'x', () => view.state.update({})),
+    )
+    expect(handled).toBe(true)
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\nx')
+    view.destroy()
+  })
+})
 describe('liveMarkdown', () => {
   it('sizes a heading line and hides the # together with its space', () => {
     const view = mount('# Release notes\n\nBody')

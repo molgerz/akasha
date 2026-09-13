@@ -216,7 +216,13 @@ row above it. A right-click on a cell still opens the whole set at once, in the
 same order, for anyone who reaches for it. An insert then hands the caret to the
 cell it made — the leftmost of the new row, the topmost of the new column — so
 the next keystroke lands where the row or column just appeared instead of back
-at the top left of the table. `src/ui/editor-table.ts`
+at the top left of the table. **Typing at the table's own edge** — the very
+first or last position of its line — opens a line *outside* it: a character
+after the closing pipe would otherwise become another column of that one row,
+which is not a column, it is a typo. Under the table that means a *blank* line:
+a plain line directly beneath a row is another row to GFM, so text written right
+under a table would come back as a cell of it — the paragraph would be gone. `src/ui/editor-table.ts`, the block edges
+in `src/ui/markdown-live.ts`
 
 Under all of it the document stays a plain Markdown table. A cell is written
 back when the caret *leaves* it, not on every keystroke: one edit is one undo
@@ -279,6 +285,12 @@ fragment, no other client draws one, and the image itself is untouched.
 **Cost, stated plainly:** another client shows the picture at its natural size,
 and `#width=480` is visible in the source, the history and the diff.
 `src/ui/image-width.ts`
+
+**A picture is a block.** Nothing is written beside it: the picture is drawn as a
+block of its own, and typing at the edge of the line it stands on opens a line
+outside it, the same way a table's edge does — the text then sits above or below
+the picture instead of running around it. `src/ui/MarkdownEditor.tsx`,
+`src/ui/markdown-live.ts`
 
 **A picture with no size of its own is measured, not guessed.** An SVG written
 `width="100%"` has no width to shrink-wrap against: inside the editor's box,
@@ -355,7 +367,9 @@ the **pipe table**. The entry writes a 3×2 skeleton — a header and two body r
 because one row is a table to extend before it can be typed into — and puts the
 cursor in the first header cell, so the next keystrokes are cell contents; the
 rendered page then treats it like any other GFM table (`src/ui/editor-slash.ts`
-exports the skeleton as `TABLE_SKELETON`). **The block lands on the line the
+exports the skeleton as `TABLE_SKELETON`). If something already stands on the
+line below, one blank line goes in between: the table would otherwise take that
+line as a row of its own and swallow a paragraph that was not part of it. **The block lands on the line the
 slash stands on**, because the slash is the first character of its line: every
 entry writes its block where the command was typed and no blank line in front of
 it. Only the divider asks for one, and only when the line above is text. The

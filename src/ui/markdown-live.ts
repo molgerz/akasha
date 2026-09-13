@@ -1,6 +1,7 @@
 import { syntaxTree } from '@codemirror/language'
 import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
 import type { DecorationSet, ViewUpdate } from '@codemirror/view'
+import { EditorSelection } from '@codemirror/state'
 import type { EditorState, Extension, Range, Text } from '@codemirror/state'
 import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common'
 import { findMentions } from '../nostr/mentions'
@@ -533,13 +534,78 @@ class LivePreview {
 }
 
 /**
+ * The block a line holds when it holds nothing else: an image on a line of its
+ * own, or a table — which starts and ends at line boundaries by construction.
+ */
+function edgeBlock(state: EditorState, from: number, to: number): 'image' | 'table' | null {
+  let found: 'image' | 'table' | null = null
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name !== 'Image' && node.name !== 'Table') return
+      if (node.from > from || node.to < to) return
+      if (state.doc.sliceString(from, node.from).trim()) return
+      if (state.doc.sliceString(node.to, to).trim()) return
+      found = node.name === 'Image' ? 'image' : 'table'
+    },
+  })
+  return found
+}
+
+/**
+ * What to insert when text is typed at the very start or the very end of a line
+ * that holds nothing but a block — or `null` when the line is an ordinary one.
+ *
+ * Writing at a table's edge used to append to the table's own last row, where a
+ * character after the closing pipe becomes another column of that row alone.
+ * Writing at an image's edge used to put text beside the picture. Both are
+ * block-level things: the text belongs on a new line outside them.
+ *
+ * Under a *table* it needs a blank line, not just a new one: a plain line
+ * directly beneath a row is another row to GFM, so the text would come back as a
+ * cell of the table instead of as a paragraph. A picture has nothing to join.
+ */
+export function edgeInsert(
+  state: EditorState,
+  from: number,
+  to: number,
+  text: string,
+): { from: number; to: number; insert: string } | null {
+  if (from !== to || text.length === 0) return null
+  const line = state.doc.lineAt(from)
+  if (from !== line.from && from !== line.to) return null
+  const block = edgeBlock(state, line.from, line.to)
+  if (!block) return null
+  if (from === line.from) return { from, to, insert: text + '\n' }
+  return { from, to, insert: (block === 'table' ? '\n\n' : '\n') + text }
+}
+
+/**
+ * The editor's own typing, with those two edges kept out of the block. A cell
+ * input is a DOM field inside a widget, so nothing typed in one comes through
+ * here — this is the text cursor's path only.
+ */
+const blockEdges: Extension = EditorView.inputHandler.of((view, from, to, text) => {
+  const change = edgeInsert(view.state, from, to, text)
+  if (!change) return false
+  view.dispatch({
+    changes: change,
+    // The typed text is at the end of what is inserted, whichever side it went.
+    selection: EditorSelection.cursor(from + change.insert.length),
+    scrollIntoView: true,
+    userEvent: 'input.type',
+  })
+  return true
+})
+
+/**
  * The editor's live formatting, as one extension: the line-by-line decorations,
- * the tables (a state field — a plugin may not replace line breaks), and the
- * fact that a table is one thing the caret walks over.
+ * the tables (a state field — a plugin may not replace line breaks), the fact
+ * that a table is one thing the caret walks over, and the block edges above.
  */
 export const liveMarkdown: Extension = [
   tableState,
   tableAtomicRanges,
+  blockEdges,
   ViewPlugin.fromClass(LivePreview, {
     decorations: (plugin) => plugin.decorations,
     provide: (plugin) =>

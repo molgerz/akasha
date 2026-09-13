@@ -173,14 +173,17 @@ export function PageEditor({
           setUploadNote(`${file.name}: ${result.reason}`)
           return
         }
-        // No newline in front: the file picker opens from `/image` at the start
-        // of its line, so the attachment belongs on that line — a leading one
-        // only left a blank line behind. The trailing one opens the line the
-        // writing carries on from.
+        // Exactly the attachment, no newlines around it: the file picker opens
+        // from `/image` at the start of its line, so the attachment belongs on
+        // that line, and a picture is a block — writing under it opens its own
+        // line (see the block edges in src/ui/markdown-live.ts) instead of a
+        // blank line being laid down in advance.
         const snippet = attachmentMarkdown(result, file.name)
-        if (editorHandle.current) editorHandle.current.insert(`${snippet}\n`)
-        else setContent((current) => `${current}${snippet}\n`)
-        setUploadNote(`${file.name} uploaded (${Math.round(result.size / 1024)} kB)`)
+        if (editorHandle.current) editorHandle.current.insert(snippet)
+        else setContent((current) => `${current}${snippet}`)
+        // No note on the way out: it stayed up under the editor for the rest of
+        // the session, and the attachment appearing where it was put is the
+        // confirmation. Failures still say so — see the catch below.
       }
     } catch (err) {
       setUploadNote(err instanceof Error ? err.message : 'upload failed')

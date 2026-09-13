@@ -12,8 +12,8 @@ import { emojiCompletion, mentionCompletion } from './editor-complete'
 const slash = slashInsertCompletion()
 
 /** the context the editor would hand a source: cursor at the end of `doc` */
-function at(doc: string) {
-  return new CompletionContext(EditorState.create({ doc }), doc.length, false)
+function at(doc: string, pos = doc.length) {
+  return new CompletionContext(EditorState.create({ doc }), pos, false)
 }
 
 /** the labels the source offers for a document whose cursor is at its end */
@@ -27,8 +27,8 @@ function options(doc: string): string[] | null {
  * exactly the way CodeMirror runs it (`applyCompletion`), so a forgotten
  * function — which would insert the label instead — is caught here.
  */
-function apply(doc: string, label: string, onAttach?: () => void) {
-  const result = slashInsertCompletion(onAttach)(at(doc)) as CompletionResult
+function apply(doc: string, label: string, onAttach?: () => void, pos = doc.length) {
+  const result = slashInsertCompletion(onAttach)(at(doc, pos)) as CompletionResult
   const option = result.options.find((entry) => entry.label === label)
   expect(option, `no "${label}" entry`).toBeDefined()
 
@@ -145,6 +145,17 @@ describe('what a / entry writes', () => {
     expect(apply('hello\n/ta', 'table').text).toBe('hello\n' + TABLE_SKELETON)
   })
 
+  it('keeps the line under a new table out of the table', () => {
+    // A plain line right under a row is another row to GFM's parser: without
+    // the blank line the writer's paragraph comes back as a cell of the table,
+    // and the table's widget draws it as one — the paragraph is simply gone.
+    const doc = 'hello\n/table\nbelow'
+    expect(apply(doc, 'table', undefined, 12).text).toBe('hello\n' + TABLE_SKELETON + '\n\nbelow')
+  })
+
+  it('adds no blank line under a table when nothing follows it', () => {
+    expect(apply('hello\n/table', 'table').text).toBe('hello\n' + TABLE_SKELETON)
+  })
   it('writes a fenced pair with the cursor on the language line', () => {
     const { text, from } = apply('/', 'code')
     expect(text).toBe('```\n\n```\n')

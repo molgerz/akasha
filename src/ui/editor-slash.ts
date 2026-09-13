@@ -47,6 +47,13 @@ export type SlashCommand = {
    * what the page renders with. src/ui/editor-slash.ts, docs/13-editing.md
    */
   blankBefore?: boolean
+  /**
+   * needs a blank line *below* it when something follows: a plain line directly
+   * under a table row is another row to GFM's parser, so the writer's paragraph
+   * would come back as a cell of the table — the table's widget would draw it as
+   * one, and the paragraph would be gone. Only the table does this.
+   */
+  blankAfter?: boolean
 }
 
 /**
@@ -71,6 +78,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     insert: TABLE_SKELETON,
     cursor: TABLE_SKELETON.indexOf('Column'),
     select: 'Column'.length,
+    blankAfter: true,
   },
   {
     label: 'image',
@@ -146,7 +154,14 @@ function applyCommand(
   const line = view.state.doc.lineAt(from)
   const above = line.number > 1 ? view.state.doc.line(line.number - 1).text : ''
   const lead = command.blankBefore && above.trim().length > 0 ? '\n' : ''
-  const insert = lead + command.insert
+
+  // What stands on the line after the block once it is written — the first line
+  // of the text that follows the typed query. See `blankAfter`.
+  const rest = view.state.doc.sliceString(to)
+  const after = rest.includes('\n') ? rest.slice(rest.indexOf('\n') + 1).split('\n')[0] : rest
+  const tail = command.blankAfter && after.trim().length > 0 ? '\n' : ''
+
+  const insert = lead + command.insert + tail
 
   view.dispatch({
     changes: { from, to, insert },
