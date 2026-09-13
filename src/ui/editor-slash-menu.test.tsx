@@ -85,7 +85,9 @@ describe('the / menu in the assembled editor', () => {
     expect(host.querySelector('.cm-tooltip-autocomplete')).not.toBeNull()
 
     pressEnter(content)
-    expect(view.state.doc.toString()).toBe(TABLE_SKELETON)
+    // …and the two newlines under it: the blank line the table needs to end at,
+    // and the line the writer goes on writing on.
+    expect(view.state.doc.toString()).toBe(TABLE_SKELETON + '\n\n')
     close()
   })
 

@@ -1,12 +1,12 @@
 import { syntaxTree } from '@codemirror/language'
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
-import type { DecorationSet, ViewUpdate } from '@codemirror/view'
-import { EditorSelection } from '@codemirror/state'
+import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from '@codemirror/view'
+import type { Command, DecorationSet, ViewUpdate } from '@codemirror/view'
+import { EditorSelection, Prec } from '@codemirror/state'
 import type { EditorState, Extension, Range, Text } from '@codemirror/state'
 import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common'
 import { findMentions } from '../nostr/mentions'
 import { ImageWidget } from './editor-image'
-import { tableAtomicRanges, tableState } from './editor-table'
+import { separatorLine, tableAtomicRanges, tableState } from './editor-table'
 import { mentionChip, releaseMention } from './mention-chip'
 
 /**
@@ -551,6 +551,17 @@ function edgeBlock(state: EditorState, from: number, to: number): 'image' | 'tab
   return found
 }
 
+/** Does a table end exactly at `pos`? */
+function tableEndsAt(state: EditorState, pos: number): boolean {
+  let found = false
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name === 'Table' && node.to === pos) found = true
+    },
+  })
+  return found
+}
+
 /**
  * What to insert when text is typed at the very start or the very end of a line
  * that holds nothing but a block — or `null` when the line is an ordinary one.
@@ -563,6 +574,12 @@ function edgeBlock(state: EditorState, from: number, to: number): 'image' | 'tab
  * Under a *table* it needs a blank line, not just a new one: a plain line
  * directly beneath a row is another row to GFM, so the text would come back as a
  * cell of the table instead of as a paragraph. A picture has nothing to join.
+ *
+ * The same goes one line further down. Enter at the table's edge leaves an empty
+ * line under it, and while that line is empty the table has ended — but the
+ * first character written on it turns it into another row. So the blank line is
+ * written together with the text, and the writer never sees the table's last row
+ * swallow what they type outside it.
  */
 export function edgeInsert(
   state: EditorState,
@@ -574,9 +591,19 @@ export function edgeInsert(
   const line = state.doc.lineAt(from)
   if (from !== line.from && from !== line.to) return null
   const block = edgeBlock(state, line.from, line.to)
-  if (!block) return null
-  if (from === line.from) return { from, to, insert: text + '\n' }
-  return { from, to, insert: (block === 'table' ? '\n\n' : '\n') + text }
+  if (block) {
+    if (from === line.from) return { from, to, insert: text + '\n' }
+    return { from, to, insert: (block === 'table' ? '\n\n' : '\n') + text }
+  }
+  // The empty line Enter leaves under a table — see above. Only an empty one:
+  // where there is already text, the row is already a row, and splitting it
+  // would move the writer's words around.
+  if (from === line.from && line.from === line.to && line.number > 1) {
+    if (tableEndsAt(state, state.doc.line(line.number - 1).to)) {
+      return { from, to, insert: '\n' + text }
+    }
+  }
+  return null
 }
 
 /**
@@ -598,14 +625,117 @@ const blockEdges: Extension = EditorView.inputHandler.of((view, from, to, text) 
 })
 
 /**
+ * Backspace at the start of the first line under a table.
+ *
+ * The blank line that separates a table from the paragraph under it is part of
+ * the table's own range: it is not drawn, and the caret is not meant to stand
+ * in it. It is still a line in the document, so the default Backspace would
+ * delete the newline that ends it and pull the paragraph up against the last
+ * row — where GFM reads a plain line as another row. The paragraph would come
+ * back as a cell of the table, its words inside the grid instead of under it.
+ * There is nothing on screen to join the two, so the key does nothing.
+ */
+const backspaceUnderTable: Command = (view) => {
+  const { state } = view
+  for (const range of state.selection.ranges) {
+    if (!range.empty) return false
+    const line = state.doc.lineAt(range.head)
+    if (range.head !== line.from || line.number < 3) return false
+    const blank = state.doc.line(line.number - 1)
+    if (blank.text.trim().length > 0) return false
+    if (!tableEndsAt(state, state.doc.line(line.number - 2).to)) return false
+  }
+  return true
+}
+
+/**
+ * Enter at a table's edge.
+ *
+ * The caret to the right of the grid sits at the end of the table's own line,
+ * and the line under it is the blank one GFM needs between a row and a
+ * paragraph. Pressed there, the key used to insert a newline and leave the
+ * caret *in* that blank line: it has no height, so the cursor appeared at the
+ * bottom-left corner of the card, and only typing a character — or pressing
+ * Enter once more — moved it on to the paragraph line the editor keeps under
+ * the table. Typing on that same spot has gone to the paragraph line all along
+ * (edgeInsert above); the key did not.
+ *
+ * So the key goes where the character goes. The paragraph line is the line
+ * after the blank one: if it is empty it is already waiting for the writer and
+ * the caret simply moves onto it, and if there are words there already, Enter
+ * opens a new line above them, the way it does at the start of any line. A page
+ * that stops at the grid — saved before the table got its trailing lines —
+ * first grows the blank line and the paragraph line, exactly as a click below
+ * the grid does. src/ui/MarkdownEditor.tsx
+ */
+const enterAfterTable: Command = (view) => {
+  const { state } = view
+  if (state.selection.ranges.length !== 1) return false
+  const range = state.selection.main
+  if (!range.empty) return false
+
+  const line = state.doc.lineAt(range.head)
+  // Two places the caret stands "at the table": the end of the grid's own line,
+  // and the table's hidden blank line, where the key below used to leave it.
+  const gridEnd = line.number > 1 ? state.doc.line(line.number - 1).to : -1
+  const onGrid = range.head === line.to && tableEndsAt(state, line.to)
+  const onSeparator = line.text.trim().length === 0 && tableEndsAt(state, gridEnd)
+  if (!onGrid && !onSeparator) return false
+
+  const tableTo = onGrid ? line.to : gridEnd
+  if (tableTo === state.doc.length) {
+    // The page stops at the grid, so there is no line under it to put the caret
+    // on. Open both — the blank line that keeps a paragraph out of the table,
+    // and the line to write on.
+    view.dispatch({
+      changes: { from: tableTo, insert: '\n\n' },
+      selection: EditorSelection.cursor(tableTo + 2),
+      scrollIntoView: true,
+      userEvent: 'input',
+    })
+    return true
+  }
+
+  const separator = separatorLine(state, tableTo)
+  const writerFrom = separator ? separator.to + 1 : tableTo + 1
+
+  if (state.doc.lineAt(writerFrom).text.trim().length === 0) {
+    // The paragraph line is already there and empty: the caret moves onto it,
+    // which is the line a character typed here would have landed on.
+    view.dispatch({
+      selection: EditorSelection.cursor(writerFrom),
+      scrollIntoView: true,
+      userEvent: 'select',
+    })
+    return true
+  }
+
+  // There is a paragraph under the table already: Enter opens a line above it.
+  view.dispatch({
+    changes: { from: writerFrom, insert: '\n' },
+    selection: EditorSelection.cursor(writerFrom),
+    scrollIntoView: true,
+    userEvent: 'input',
+  })
+  return true
+}
+
+/**
  * The editor's live formatting, as one extension: the line-by-line decorations,
  * the tables (a state field — a plugin may not replace line breaks), the fact
- * that a table is one thing the caret walks over, and the block edges above.
+ * that a table is one thing the caret walks over, the block edges above, and
+ * the one key that has to know where a table ends.
  */
 export const liveMarkdown: Extension = [
   tableState,
   tableAtomicRanges,
   blockEdges,
+  Prec.high(
+    keymap.of([
+      { key: 'Backspace', run: backspaceUnderTable },
+      { key: 'Enter', run: enterAfterTable },
+    ]),
+  ),
   ViewPlugin.fromClass(LivePreview, {
     decorations: (plugin) => plugin.decorations,
     provide: (plugin) =>

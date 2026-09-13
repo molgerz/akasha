@@ -219,10 +219,34 @@ the next keystroke lands where the row or column just appeared instead of back
 at the top left of the table. **Typing at the table's own edge** — the very
 first or last position of its line — opens a line *outside* it: a character
 after the closing pipe would otherwise become another column of that one row,
-which is not a column, it is a typo. Under the table that means a *blank* line:
-a plain line directly beneath a row is another row to GFM, so text written right
-under a table would come back as a cell of it — the paragraph would be gone. `src/ui/editor-table.ts`, the block edges
-in `src/ui/markdown-live.ts`
+which is not a column, it is a typo. The block edges in
+`src/ui/markdown-live.ts` are that rule.
+
+**The blank line under a table belongs to the table, and is taken out of the
+way.** A plain line directly beneath a row is another row to GFM, so a paragraph
+under a table only exists if a blank line separates the two: the document really
+has that line. But it is the table's syntax, not the writer's text, and it is a
+line the writer can see and cannot write in — the character has to be pushed to
+the line below it, or the table would swallow it as a row, so the text appears
+somewhere other than where the caret was. So `/table` always writes that line
+together with a line to write on: a page whose last block is a table used to end
+there, with nothing under the grid at all, and a click in the empty space below
+the card could not be typed at. The blank separator is then drawn with no height
+and the caret steps over it (`EditorView.atomicRanges`), which leaves the air
+under the grid to the line after it — a click anywhere below the table lands on
+the line the writer writes on, and the character appears where it was clicked.
+A page that stops at the grid, saved before the skeleton grew that line, opens
+the two lines on the click itself. Backspace at the start of the paragraph does
+nothing: deleting the separator would bring the paragraph up against the last
+row, where GFM reads it as one more row, and the words would come back as a cell
+of the table. **Enter at the table's edge goes to the line the character would
+go to.** Pressed there it used to insert the newline and leave the caret in the
+blank separator — a line with no height, so the cursor read as the bottom-left
+corner of the card, and only a typed character (or a second Enter) reached the
+paragraph line. The key now does what the character does: it moves the caret
+onto that line, or opens a line above the words already standing under the
+table. `src/ui/editor-table.ts`, `src/ui/markdown-live.ts`,
+`src/ui/MarkdownEditor.tsx`
 
 Under all of it the document stays a plain Markdown table. A cell is written
 back when the caret *leaves* it, not on every keystroke: one edit is one undo
@@ -246,6 +270,30 @@ lose its columns (a header of two and a row of one under it), and the skeleton
 `/table` writes would arrive with no cell to type into at all. Writing into one
 replaces the whole space between its pipes, so the line comes out `| x |` and not
 `|x  |`, the shape a structural edit writes as well. `src/ui/editor-table.ts`
+
+**A block is a block, and nothing more.** CodeMirror brackets every replaced
+widget with a zero-width buffer so the caret has a DOM position beside it. Around
+a *block* widget that buffer becomes a line box of its own: one whole empty line
+above the table or the picture and one below, on top of the card's own margin —
+the reason a fresh table looked as though a blank line had been written before
+it. The buffer is hidden on the lines that hold a table or a picture: the widget
+is atomic, the caret steps over it. Measured in the running editor: the gap went
+from 54px to 24px on each side. `src/ui/MarkdownEditor.tsx`
+
+**And that air belongs to a line, never to the block itself.** A margin on the
+widget is a strip *inside* the block's own line: a click there moves the caret to
+the block's edge — not where the writer clicked — while nothing can be typed into
+it, which reads as a blank line that cannot be used. CodeMirror's height map does
+not even see it: `getBoundingClientRect` leaves a margin out, so the reserved
+height and the pixels disagree. So a table and a picture have no margin at all.
+Under a picture the gap is the padding of the line after it; under a table the
+line after it is the table's own blank line, which takes no height, and the
+padding is on the next line — the one the writer uses. Above them there is none:
+the line before a block cannot own it without nesting `:has()`, which CSS does not
+allow, and the paragraph's own line height leaves enough air. Measured in the
+running editor: with a table at the end of the page the grid's line is exactly as
+tall as the card, and the gap under it belongs to a line that takes a click and a
+keystroke at the point clicked — no dead strip.
 
 **Every row is at least one line tall.** A cell with nothing in it has no line
 box, so a new row would come out a whole line shorter than the header above it —
@@ -376,8 +424,11 @@ because one row is a table to extend before it can be typed into — and puts th
 cursor in the first header cell, so the next keystrokes are cell contents; the
 rendered page then treats it like any other GFM table (`src/ui/editor-slash.ts`
 exports the skeleton as `TABLE_SKELETON`). If something already stands on the
-line below, one blank line goes in between: the table would otherwise take that
-line as a row of its own and swallow a paragraph that was not part of it. **The block lands on the line the
+line below — or right behind the slash query — one blank line goes in between:
+the table would otherwise take that line as a row of its own and swallow a
+paragraph that was not part of it. When nothing follows, the blank line and the
+line to write on are written anyway, so a fresh table is never the last thing in
+the document (see the blank line under a table, above). **The block lands on the line the
 slash stands on**, because the slash is the first character of its line: every
 entry writes its block where the command was typed and no blank line in front of
 it. Only the divider asks for one, and only when the line above is text. The

@@ -20,6 +20,7 @@ import { syntaxTree, syntaxHighlighting, HighlightStyle } from '@codemirror/lang
 import { tags } from '@lezer/highlight'
 import { useTheme } from '../theme/theme'
 import { liveMarkdown } from './markdown-live'
+import { needsLineUnderTable } from './editor-table'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
 import { slashInsertCompletion } from './editor-slash'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
@@ -224,7 +225,11 @@ function editorTheme(dark: boolean) {
       // of the two changes, the other has to follow.
       '.cm-md-table': {
         position: 'relative',
-        margin: '1.5rem 0',
+        // No margin of its own: the air around a block belongs to the lines next
+        // to it. See the note on the line rules below — a margin here would be a
+        // strip inside the widget's own line, which the writer can click into
+        // but not write in.
+        margin: '0',
         border: '1px solid var(--line)',
         borderRadius: '8px',
         // Not clipped: a row's handle sits on the left edge and a column's on
@@ -239,12 +244,42 @@ function editorTheme(dark: boolean) {
         whiteSpace: 'normal',
       },
       '.cm-md-table-row': { display: 'grid', position: 'relative' },
-      // A line that holds a block — a table or a picture — owns its margins
-      // instead of letting them collapse out of it: as an escaped margin the
-      // card's 1.5rem of air above read as a blank line the writer cannot put
-      // the caret in, and the editor's own idea of the line's height was short
-      // by that much.
+      // The air under a picture sits on the **line after** it and never inside
+      // the picture's own line. Inside, it was a strip below the card that took
+      // a click but nothing typed: the caret went to the block's edge, which is
+      // not where the writer clicked.
+      //
+      // Under a table the line directly below is the table's own blank line — it
+      // has to stay blank, or a paragraph written there is read as another row.
+      // It is a line the writer can see and cannot write in, which is the dead
+      // strip this avoids. So it is given no height at all: it disappears from
+      // the picture, and the air moves to the line under *it*, which is the line
+      // the writer really writes on. src/ui/editor-table.ts, separatorLine
+      //
+      // Above a block there is no such gap on purpose: the line *before* it
+      // cannot be reached from CSS without nesting `:has()`, which is not
+      // allowed, and a gap that belongs to neither line is exactly the dead strip
+      // this fixes. The paragraph's own line height leaves the air.
+      '.cm-line:has(> .cm-md-image) + .cm-line': { paddingTop: '1rem' },
+      '.cm-md-table-separator': {
+        height: '0',
+        minHeight: '0',
+        lineHeight: '0',
+        padding: '0',
+        overflow: 'hidden',
+      },
+      '.cm-line:has(> .cm-md-table) + .cm-line + .cm-line': { paddingTop: '1rem' },
+      // A block formatting context, so nothing about the widget can escape its
+      // line — and so the line's own height is the widget's.
       '.cm-line:has(> .cm-md-table), .cm-line:has(> .cm-md-image)': { display: 'flow-root' },
+      // CodeMirror brackets a replaced widget with a zero-width buffer element
+      // so the caret has a DOM position beside it. Around a *block* widget that
+      // buffer becomes a line box of its own — one whole empty line above the
+      // card and one below, which is what made a table or a picture look as
+      // though blank lines had been written around it. Nothing needs it there:
+      // the widget is atomic and the caret steps over it.
+      '.cm-line:has(> .cm-md-table) > .cm-widgetBuffer, .cm-line:has(> .cm-md-image) > .cm-widgetBuffer':
+        { display: 'none' },
       '.cm-md-table-cell': {
         position: 'relative',
         padding: '0.5rem 0.75rem',
@@ -372,7 +407,8 @@ function editorTheme(dark: boolean) {
         display: 'block',
         width: 'fit-content',
         maxWidth: '100%',
-        margin: '1.5rem 0',
+        // as above: the air belongs to the neighbouring lines
+        margin: '0',
         whiteSpace: 'normal',
       },
       '.cm-md-image img': {
@@ -784,12 +820,37 @@ export function MarkdownEditor({
       onMouseDown={(event) => {
         // A click in the empty space below the last line puts the cursor at
         // the end, the way clicking under the last paragraph of a document
-        // does. Without this the grown-out area is dead to the touch.
-        if (event.target !== event.currentTarget) return
+        // does. Without this the grown-out area is dead to the touch — and it
+        // is the only way to reach the line a table needs under it when the
+        // page stops at the grid, which pages written before that line are.
+        //
+        // The empty space is the host itself, but also the editor and its
+        // scroller: CodeMirror draws those round its content, so "the target is
+        // the host" is too narrow a test and the click was ignored.
+        const target = event.target as HTMLElement
+        // A widget owns its own events (a cell, a handle, the table's menu), so
+        // those are left alone. The menu is moved near the click, which can put
+        // it below the last line as well.
+        if (target.closest('.cm-md-table, .cm-md-image')) return
         const instance = view.current
         if (!instance) return
+        const lines = instance.contentDOM.querySelectorAll('.cm-line')
+        const last = lines[lines.length - 1]
+        if (last && event.clientY < last.getBoundingClientRect().bottom) return
         event.preventDefault()
-        instance.dispatch({ selection: { anchor: instance.state.doc.length } })
+        const end = instance.state.doc.length
+        if (needsLineUnderTable(instance.state)) {
+          // The page stops at the grid: there is no line under it to put the
+          // caret on, so the click opens the ones the table needs — the blank
+          // line that keeps a paragraph out of the table, and the line itself.
+          instance.dispatch({
+            changes: { from: end, insert: '\n\n' },
+            selection: { anchor: end + 2 },
+            userEvent: 'input',
+          })
+        } else {
+          instance.dispatch({ selection: { anchor: end } })
+        }
         instance.focus()
       }}
     />

@@ -155,11 +155,34 @@ function applyCommand(
   const above = line.number > 1 ? view.state.doc.line(line.number - 1).text : ''
   const lead = command.blankBefore && above.trim().length > 0 ? '\n' : ''
 
-  // What stands on the line after the block once it is written — the first line
-  // of the text that follows the typed query. See `blankAfter`.
+  // What stands after the block once it is written. See `blankAfter`: a table
+  // takes the line under it, so whatever follows has to be separated from it by
+  // a blank line — and how many newlines that takes depends on where the text
+  // sits relative to the typed query.
+  //
+  // The blank line is not optional even when nothing follows the table. Without
+  // it the table is the last line of the document, and then there is nothing
+  // under the grid to click or write into at all: the writer sees the empty
+  // space the editor leaves at the bottom of the page, puts a cursor in it and
+  // cannot type. So the table always gets its blank line, and the line under
+  // that one is where the next paragraph goes.
   const rest = view.state.doc.sliceString(to)
-  const after = rest.includes('\n') ? rest.slice(rest.indexOf('\n') + 1).split('\n')[0] : rest
-  const tail = command.blankAfter && after.trim().length > 0 ? '\n' : ''
+  let tail = ''
+  if (command.blankAfter) {
+    if (rest.length === 0) {
+      // Nothing follows at all: the blank line and the line to write on.
+      tail = '\n\n'
+    } else if (rest.startsWith('\n')) {
+      // The query stood at the end of its line: the first line of `rest` is
+      // empty, and the text under it needs one more newline before it — as does
+      // a document that stops right there, so that a line is left to write on.
+      if (rest.length === 1 || rest.slice(1).split('\n')[0].trim().length > 0) tail = '\n'
+    } else {
+      // Text follows on the same line as the query. It needs a line of its own
+      // *and* the blank line, or it becomes the table's last row.
+      tail = '\n\n'
+    }
+  }
 
   const insert = lead + command.insert + tail
 

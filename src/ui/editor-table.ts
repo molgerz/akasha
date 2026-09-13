@@ -907,11 +907,22 @@ export class TableWidget extends WidgetType {
     }))
     const deleteTable = {
       label: 'Delete table',
-      run: () =>
+      run: () => {
+        if (!this.isCurrent(view)) return
+        // The blank line under the table is the table's own tail (see
+        // `separatorLine`), so it goes with it — otherwise deleting a table
+        // would leave an empty line behind. What is left is the blocks that
+        // stood around it, separated by the blank line that was above it.
+        const separator = separatorLine(view.state, this.table.to)
         view.dispatch({
-          changes: { from: this.table.from, to: this.table.to, insert: '' },
+          changes: {
+            from: this.table.from,
+            to: separator ? separator.to + 1 : this.table.to,
+            insert: '',
+          },
           userEvent: 'delete',
-        }),
+        })
+      },
     }
 
     if (scope === 'row') return [insertRowAbove, insertRowBelow, deleteRow]
@@ -929,6 +940,36 @@ export class TableWidget extends WidgetType {
   }
 }
 
+/**
+ * The blank line a table needs under it — the one that keeps a paragraph from
+ * being read as another row.
+ *
+ * GFM reads a plain line directly under a row as another row, so a paragraph
+ * under a table only exists if a blank line separates the two. That line is
+ * part of the table's syntax, not of the writer's text: it is where the table
+ * ends, and the writer has no business putting a caret in it. It is not hidden
+ * with the table either — a replaced range that reaches it would reach the end
+ * of the document, and then the line the writer *does* write on stops being
+ * drawn at all and the grid is left with no typeable line under it. So it stays
+ * a real line, and is only taken out of the picture and out of the caret's
+ * path. See the .cm-md-table-separator rules in MarkdownEditor.tsx.
+ */
+export function separatorLine(
+  state: EditorState,
+  tableTo: number,
+): { from: number; to: number } | null {
+  const doc = state.doc
+  if (tableTo >= doc.length || doc.sliceString(tableTo, tableTo + 1) !== '\n') return null
+  const after = tableTo + 1
+  const next = doc.lineAt(after)
+  if (next.from !== after || next.text.trim().length > 0) return null
+  // A document that stops right there has no line *after* the blank one: that
+  // empty final line is the writer's line, not a separator, and hiding it would
+  // leave the grid with nothing under it at all. src/ui/MarkdownEditor.tsx
+  if (next.to + 1 > doc.length) return null
+  return { from: next.from, to: next.to }
+}
+
 function tableDecorations(state: EditorState): Range<Decoration>[] {
   const ranges: Range<Decoration>[] = []
   syntaxTree(state).iterate({
@@ -937,6 +978,15 @@ function tableDecorations(state: EditorState): Range<Decoration>[] {
       const table = tableData(node.node, state.doc)
       if (!table) return
       ranges.push(Decoration.replace({ widget: new TableWidget(table) }).range(node.from, node.to))
+      const separator = separatorLine(state, node.to)
+      if (!separator) return
+      // A line with no height at all, and a stretch the caret steps over, so
+      // the blank line is neither seen nor stood in. The air under the grid
+      // then belongs to the line after it, which is the one the writer uses.
+      ranges.push(Decoration.line({ class: 'cm-md-table-separator' }).range(separator.from))
+      ranges.push(
+        Decoration.mark({}).range(separator.from, Math.min(separator.to + 1, state.doc.length)),
+      )
     },
   })
   return ranges
@@ -961,6 +1011,27 @@ export const tableState = StateField.define<DecorationSet>({
   },
   provide: (field) => EditorView.decorations.from(field),
 })
+
+/**
+ * Does the document stop at the last row of a table, with no line under it?
+ *
+ * A page saved before the table skeleton grew its trailing line ends exactly
+ * there. The grid is then the last line of the document, so there is no text
+ * position under it to put a caret in: a click beneath the card selects an
+ * offset the browser cannot type at, and the writer sees a cursor they cannot
+ * write from. The only honest answer is to open the line the click asked for —
+ * `MarkdownEditor.tsx` appends the two newlines and puts the caret on the
+ * second one, which is the paragraph line under the table.
+ */
+export function needsLineUnderTable(state: EditorState): boolean {
+  let to: number | null = null
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name === 'Table') to = node.to
+    },
+  })
+  return to !== null && to === state.doc.length
+}
 
 /**
  * A table is one thing, like a mention chip: the caret steps over it, a

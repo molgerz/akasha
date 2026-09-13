@@ -123,7 +123,8 @@ describe('the / trigger', () => {
 describe('what a / entry writes', () => {
   it('writes the 3×2 table skeleton and selects the first header cell', () => {
     const { text, from, to } = apply('/', 'table')
-    expect(text).toBe(TABLE_SKELETON)
+    // the skeleton plus the blank line under it and the line to write on
+    expect(text).toBe(TABLE_SKELETON + '\n\n')
     // a header and *two* body rows — one row would be a table to extend before
     // it could be typed into
     expect(TABLE_SKELETON.split('\n')).toEqual([
@@ -142,7 +143,8 @@ describe('what a / entry writes', () => {
     // The slash is the first character of its line, so the table already has a
     // line of its own: a blank line before it would only push it down and leave
     // the empty line behind. A table under a paragraph is a table to GFM.
-    expect(apply('hello\n/ta', 'table').text).toBe('hello\n' + TABLE_SKELETON)
+    // Under it, the blank line the table needs *and* the line to write on.
+    expect(apply('hello\n/ta', 'table').text).toBe('hello\n' + TABLE_SKELETON + '\n\n')
   })
 
   it('keeps the line under a new table out of the table', () => {
@@ -153,8 +155,19 @@ describe('what a / entry writes', () => {
     expect(apply(doc, 'table', undefined, 12).text).toBe('hello\n' + TABLE_SKELETON + '\n\nbelow')
   })
 
-  it('adds no blank line under a table when nothing follows it', () => {
-    expect(apply('hello\n/table', 'table').text).toBe('hello\n' + TABLE_SKELETON)
+  it('keeps text that followed the query on the same line out of the table', () => {
+    // `/table` typed in front of existing text — `/tableunten`. One newline
+    // would put that text on the line directly under the last row, which is a
+    // row to GFM; it needs a line of its own and the blank line.
+    // the cursor stands right after the query, with `unten` behind it
+    expect(apply('/tableunten', 'table', undefined, 6).text).toBe(TABLE_SKELETON + '\n\nunten')
+  })
+  it('leaves a line to write on when nothing follows the table', () => {
+    // The table used to be the last line of the document, and then there was
+    // nothing under the grid at all: the writer put a cursor in the empty space
+    // the editor leaves at the bottom and could not type. The blank line the
+    // table needs comes with the paragraph line it separates it from.
+    expect(apply('hello\n/table', 'table').text).toBe('hello\n' + TABLE_SKELETON + '\n\n')
   })
   it('writes a fenced pair with the cursor on the language line', () => {
     const { text, from } = apply('/', 'code')

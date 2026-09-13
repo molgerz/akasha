@@ -5,6 +5,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { liveMarkdown } from './markdown-live'
+import { needsLineUnderTable } from './editor-table'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 import { TABLE_SKELETON } from './editor-slash'
 
@@ -287,6 +288,85 @@ describe('the table in the editor', () => {
     view.destroy()
   })
 
+  it('keeps the blank line under a table out of the picture, not out of the document', () => {
+    // GFM needs that line: without it the paragraph under the table is one more
+    // row of it. But it is the table's own line, and a blank line the writer can
+    // see and cannot write in is the dead strip the grid used to have. So it is
+    // drawn with no height at all, and the line the writer writes on is the one
+    // after it. src/ui/MarkdownEditor.tsx, .cm-md-table-separator
+    const view = mount(TABLE + '\n\nunter')
+    const lines = view.contentDOM.querySelectorAll<HTMLElement>('.cm-line')
+    expect(lines).toHaveLength(3)
+    expect(lines[1].className).toContain('cm-md-table-separator')
+    expect(lines[1].textContent).toBe('')
+    expect(lines[2].textContent).toBe('unter')
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\nunter')
+    view.destroy()
+  })
+
+  it('knows when the document stops at the grid', () => {
+    // A page saved before the skeleton grew its trailing line ends inside the
+    // table. The click in the empty space below it has to open the lines the
+    // table needs, because there is no text position under the grid at all.
+    const atEnd = mount(TABLE)
+    expect(needsLineUnderTable(atEnd.state)).toBe(true)
+    atEnd.destroy()
+
+    const under = mount(TABLE + '\n\nunter')
+    expect(needsLineUnderTable(under.state)).toBe(false)
+    under.destroy()
+
+    // …but one that stops after the table's own newline still has a line: that
+    // empty last line is the writer's, not the table's separator.
+    const newline = mount(TABLE + '\n')
+    expect(needsLineUnderTable(newline.state)).toBe(false)
+    newline.destroy()
+  })
+
+  it("sends Enter at the grid's edge to the paragraph line, not the blank one", () => {
+    // Pressed to the right of a table, Enter used to insert the newline and
+    // leave the caret inside the blank line GFM needs under a row. That line
+    // has no height, so the caret read as the bottom-left corner of the card,
+    // and only a typed character — or a second Enter — reached the paragraph
+    // line. The key has to go where the character goes.
+    // src/ui/markdown-live.ts, enterAfterTable
+    const view = mount(TABLE + '\n\n')
+    view.dispatch({ selection: { anchor: TABLE.length } })
+    view.contentDOM.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    const line = view.state.doc.lineAt(view.state.selection.main.head)
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\n')
+    expect(line.number).toBe(5)
+    expect(line.text).toBe('')
+    view.destroy()
+  })
+
+  it('opens a line above the paragraph under a table', () => {
+    // Words already stand under the table: Enter opens the writer's line above
+    // them, exactly as it does at the start of any line.
+    const view = mount(TABLE + '\n\nunter')
+    view.dispatch({ selection: { anchor: TABLE.length } })
+    view.contentDOM.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\n\nunter')
+    expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(5)
+    view.destroy()
+  })
+
+  it('opens both lines with Enter when the page stops at the grid', () => {
+    // A page saved before the skeleton grew its trailing line: the same two
+    // lines the click below the grid opens. src/ui/MarkdownEditor.tsx
+    const view = mount(TABLE)
+    view.dispatch({ selection: { anchor: TABLE.length } })
+    view.contentDOM.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\n')
+    expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(5)
+    view.destroy()
+  })
   it('moves down with Enter, and stays put in the last row', () => {
     const view = mount(TABLE)
     key(cell(view, 0, 0), 'Enter')
@@ -423,7 +503,9 @@ describe('the table\'s right-click menu', () => {
   it('deletes the whole table', () => {
     const view = mount('before\n\n' + TABLE + '\n\nafter')
     entry(openMenu(view, 0, 0), 'Delete table').click()
-    expect(view.state.doc.toString()).toBe('before\n\n\n\nafter')
+    // the table and its own blank line are gone; the blank line that separated
+    // the paragraph above from the table is what separates the two paragraphs
+    expect(view.state.doc.toString()).toBe('before\n\nafter')
     view.destroy()
   })
 
