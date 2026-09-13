@@ -171,6 +171,16 @@ Two deviations, both deliberate:
   and says why (`src/ui/PageEditor.tsx`).
 - **The result is capped at 96 characters.** A slug is also a URL segment.
 
+Because the slug *is* the page's identity, a **new** page may not take a slug
+that is already in use: the editor refuses the publish and names the page that
+owns it, with a way through to that page (`src/ui/PageEditor.tsx`). The check is
+on the normalised slug and not on the visible heading — two headings that
+normalise alike are one page, and two that do not are two, however similar they
+read. What the client cannot see is another client creating the same slug at the
+same moment: the relay puts no uniqueness constraint on `1818`, so that race
+stays open. Editing an existing page is untouched — its saves still append to its
+own chain.
+
 ## Where a page hangs — kind `31818`
 
 Two gestures have to be expressible: filing a page **under** another one, and

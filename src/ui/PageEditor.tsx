@@ -41,6 +41,8 @@ type Props = {
   overrideParents?: string[]
   onSaved: (slug: string) => void
   onCancel: () => void
+  /** open an existing page — the way out of a slug collision on a new page */
+  onOpenPage?: (slug: string) => void
 }
 
 /**
@@ -123,6 +125,7 @@ export function PageEditor({
   overrideParents,
   onSaved,
   onCancel,
+  onOpenPage,
 }: Props) {
   const { session, ensureSamePubkey } = useSession()
   const [title, setTitle] = useState(page?.title ?? '')
@@ -215,6 +218,19 @@ export function PageEditor({
       setError('No slug can be derived from this title — please use letters or digits.')
       return
     }
+    // A new page may not take a slug that is already in use. Without this the
+    // publish would carry the existing page's head as its predecessor and
+    // quietly push a revision onto a page nobody meant to touch. The page's
+    // identity is (group, slug), so the comparison is on the normalised slug
+    // and not on the visible heading. docs/02-data-model-events.md
+    if (collision && existing) {
+      setError(
+        `A page called “${existing.title}” already exists in this space — ` +
+          `both headings resolve to the slug “${slug}”. Open that page instead of ` +
+          'creating a second one; a new page cannot take an existing slug.',
+      )
+      return
+    }
     if (hasConflictMarkers(content)) {
       setError('There are still conflict markers in the text. Please resolve them and remove the markers.')
       return
@@ -261,8 +277,9 @@ export function PageEditor({
         groupId,
         slug,
         title: title.trim(),
-        // On a slug collision keep the existing page's parent instead of
-        // silently lifting it to the top level.
+        // An existing page keeps its own parent instead of being silently
+        // lifted to the top level. A new page has nothing to inherit: it
+        // reaches this line only without a collision.
         parentSlug: parentSlug.trim() || existing?.parentSlug || null,
         // Carry the sidebar position over. Without this every save would drop
         // the page back into alphabetical order. src/domain/order.ts
@@ -333,10 +350,25 @@ export function PageEditor({
           placeholder="Untitled page"
           className="w-full bg-transparent text-[30px] leading-tight font-semibold tracking-[-0.02em] text-fg placeholder:text-fg-subtle/60 focus:outline-none"
         />
-        {collision ? (
-          <p className="mt-1 text-xs text-warning">
-            “{existing?.title}” already uses this slug. Saving appends another revision to that
-            page instead of creating a second one.
+        {/* A slug collision is not a warning but a refusal — the page cannot
+            be created under this heading at all. Named down to the resolved
+            slug, because the visible title is not what collides: two headings
+            that normalise to the same slug are the same page. The way out is
+            offered right here, since the alternative is retyping the title
+            hoping for a different result. docs/02-data-model-events.md */}
+        {collision && existing ? (
+          <p className="mt-2 text-xs text-danger">
+            “{existing.title}” already uses the slug “{slug}”, so a second page cannot take
+            it.{' '}
+            {onOpenPage ? (
+              <button
+                type="button"
+                onClick={() => onOpenPage(existing.slug)}
+                className="underline underline-offset-2 hover:text-fg"
+              >
+                Open “{existing.title}” instead
+              </button>
+            ) : null}
           </p>
         ) : null}
       </div>
