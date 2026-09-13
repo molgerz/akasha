@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { nip19 } from 'nostr-tools'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { ensureSyntaxTree } from '@codemirror/language'
+import { deleteCharBackward } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { editorFocus, liveMarkdown } from './markdown-live'
+import { edgeInsert, liveMarkdown } from './markdown-live'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 
 // A mention chip warms the profile cache through the real store, which opens a
@@ -31,9 +33,6 @@ vi.mock('../nostr/profile-store', () => ({
  */
 const NPUB = nip19.npubEncode('1'.repeat(64))
 
-/** A 2×2 table with the second column right-aligned. */
-const TABLE = '| Name | Value |\n| --- | ---: |\n| a | 1 |'
-
 /**
  * An editor on `doc`. Unfocused, so nothing is revealed — the tests about
  * revealing say so explicitly.
@@ -50,15 +49,10 @@ function mount(doc: string) {
   })
 }
 
-/**
- * jsdom reports no focus for a contenteditable, so it is asserted directly —
- * and the focus change is dispatched the way the editor dispatches it
- * (`EditorView.focusChangeEffect`), because the table field is a state field
- * and cannot see the view's `hasFocus`.
- */
+/** jsdom reports no focus for a contenteditable, so it is asserted directly. */
 function focus(view: EditorView, at: number) {
   Object.defineProperty(view, 'hasFocus', { value: true })
-  view.dispatch({ effects: editorFocus.of(true), selection: { anchor: at } })
+  view.dispatch({ selection: { anchor: at } })
 }
 
 /** the rendered text of the line, with hidden markup actually gone */
@@ -70,6 +64,111 @@ function lineClasses(view: EditorView, index: number): string {
   return view.contentDOM.children[index]?.className ?? ''
 }
 
+describe('typing at the edge of a block', () => {
+  const TABLE = '| Name | Value |\n| --- | ---: |\n| a | 1 |'
+
+  it('puts text typed after a table on a new line, not into its last row', () => {
+    const view = mount(TABLE)
+    const end = view.state.doc.length
+    // a character after the closing pipe becomes another column of that one row
+    // a blank line, not just a new one: a plain line under a row is a row
+    expect(edgeInsert(view.state, end, end, 'x')).toEqual({ from: end, to: end, insert: '\n\nx' })
+    view.destroy()
+  })
+
+  it('puts text typed before a table on a new line above it', () => {
+    const view = mount(TABLE)
+    expect(edgeInsert(view.state, 0, 0, 'x')).toEqual({ from: 0, to: 0, insert: 'x\n' })
+    view.destroy()
+  })
+
+  it('keeps text typed on the empty line under a table out of the table', () => {
+    // Enter at the table's edge leaves that line; the first character on it
+    // would otherwise turn it into another row of the table.
+    const view = mount(TABLE + '\n')
+    const at = view.state.doc.length
+    expect(edgeInsert(view.state, at, at, 'x')).toEqual({ from: at, to: at, insert: '\nx' })
+    view.destroy()
+  })
+
+  it('types under a table without the text becoming a row of it', () => {
+    const view = mount(TABLE + '\n')
+    const at = view.state.doc.length
+    const change = edgeInsert(view.state, at, at, 'x')
+    expect(change).not.toBeNull()
+    view.dispatch({ changes: change ?? [], selection: { anchor: at + 2 } })
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\nx')
+    // the parser still sees the table it was, with nothing added to it
+    expect(view.contentDOM.querySelectorAll('.cm-md-table-row')).toHaveLength(2)
+    view.destroy()
+  })
+  it('leaves an empty line elsewhere alone', () => {
+    const view = mount('ein Absatz\n\nnoch einer\n')
+    const at = view.state.doc.length
+    expect(edgeInsert(view.state, at, at, 'x')).toBeNull()
+    view.destroy()
+  })
+  it('does not let Backspace pull the paragraph under a table into it', () => {
+    // The blank line under the table is the table's own separator: it is not
+    // drawn, but it is still a line. Deleting it with Backspace would bring the
+    // paragraph up against the last row, where GFM reads a plain line as another
+    // row — the words would come back as a cell of the table.
+    const view = mount(TABLE + '\n\nunter')
+    const at = view.state.doc.length - 'unter'.length
+    // the negative control: this is what the default key would do
+    const plain = mount(TABLE + '\n\nunter')
+    plain.dispatch({ selection: { anchor: plain.state.doc.length - 'unter'.length } })
+    deleteCharBackward(plain)
+    expect(plain.state.doc.toString()).toBe(TABLE + '\nunter')
+    plain.destroy()
+
+    view.dispatch({ selection: { anchor: at } })
+    view.contentDOM.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+    )
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\nunter')
+    view.destroy()
+  })
+
+  it('does the same for a picture alone on its line', () => {
+    const view = mount('![dot](https://example.com/a.png)')
+    const end = view.state.doc.length
+    expect(edgeInsert(view.state, end, end, 'x')).toEqual({ from: end, to: end, insert: '\nx' })
+    expect(edgeInsert(view.state, 0, 0, 'x')).toEqual({ from: 0, to: 0, insert: 'x\n' })
+    view.destroy()
+  })
+
+  it('leaves an ordinary line, and a line with prose on it, alone', () => {
+    const prose = mount('see ![dot](https://example.com/a.png) now')
+    const end = prose.state.doc.length
+    expect(edgeInsert(prose.state, end, end, 'x')).toBeNull()
+    expect(edgeInsert(prose.state, 0, 0, 'x')).toBeNull()
+    prose.destroy()
+
+    const plain = mount('hello')
+    expect(edgeInsert(plain.state, 0, 0, 'x')).toBeNull()
+    expect(edgeInsert(plain.state, 5, 5, 'x')).toBeNull()
+    // …and a selection is never rewritten
+    expect(edgeInsert(plain.state, 0, 5, 'x')).toBeNull()
+    plain.destroy()
+  })
+
+  it('is wired into the editor, so typing really goes through it', () => {
+    // jsdom does not drive CodeMirror's own text input, so the handler the
+    // editor would call is called here — the registration is what is checked,
+    // and that it inserts what the rule says.
+    const view = mount(TABLE)
+    const handlers = view.state.facet(EditorView.inputHandler)
+    const end = view.state.doc.length
+    view.dispatch({ selection: { anchor: end } })
+    const handled = handlers.some(
+      (handler) => handler(view, end, end, 'x', () => view.state.update({})),
+    )
+    expect(handled).toBe(true)
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\nx')
+    view.destroy()
+  })
+})
 describe('liveMarkdown', () => {
   it('sizes a heading line and hides the # together with its space', () => {
     const view = mount('# Release notes\n\nBody')
@@ -107,6 +206,12 @@ describe('liveMarkdown', () => {
 
   it('indents a list by depth rather than by the spaces in the source', () => {
     const view = mount('- outer\n  - inner\n    - deep')
+    // The depth classes come from the syntax tree, and the tree arrives with the
+    // parser — which is not promised to be finished by the time the view exists.
+    // Forcing the parse and then a redraw is what the plugin would do anyway;
+    // without it this test passed or failed by how fast the machine was.
+    ensureSyntaxTree(view.state, view.state.doc.length, 5000)
+    view.dispatch({})
     expect(lineClasses(view, 0)).toContain('cm-md-depth-1')
     expect(lineClasses(view, 1)).toContain('cm-md-depth-2')
     expect(lineClasses(view, 2)).toContain('cm-md-depth-3')
@@ -195,43 +300,6 @@ describe('liveMarkdown', () => {
     view.destroy()
   })
 
-  it('draws an image, whichever host it comes from and without a click', () => {
-    // No gate on the origin, in the editor or on the page: a picture that only
-    // appears after a click is not a picture of anything. The cost — the host
-    // learns who reads which page and when — is the accepted trade in
-    // docs/09-security-privacy.md, not an oversight.
-    const view = mount(
-      '![a diagram](https://example.com/a.png)\n\n![dot](data:image/gif;base64,R0lGOD)',
-    )
-    const images = [...view.contentDOM.querySelectorAll<HTMLImageElement>('.cm-md-image img')]
-    expect(images.map((img) => img.getAttribute('src'))).toEqual([
-      'https://example.com/a.png',
-      'data:image/gif;base64,R0lGOD',
-    ])
-    expect(images[0].getAttribute('alt')).toBe('a diagram')
-    expect(view.contentDOM.querySelector('.cm-md-image-load')).toBeNull()
-    view.destroy()
-  })
-
-  it('puts the cursor on the image when the picture is clicked', () => {
-    const view = mount('a ![dot](data:image/gif;base64,R0lGOD) b')
-    view.contentDOM
-      .querySelector('.cm-md-image img')
-      ?.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
-    expect(view.state.selection.main.head).toBe(2)
-    focus(view, 2)
-    expect(view.contentDOM.querySelector('.cm-md-image')).toBeNull()
-    view.destroy()
-  })
-
-  it('shows the image as written on the line the cursor is on', () => {
-    const view = mount('![dot](data:image/gif;base64,R0lGOD)')
-    focus(view, 3)
-    expect(lineText(view, 0)).toBe('![dot](data:image/gif;base64,R0lGOD)')
-    expect(view.contentDOM.querySelector('.cm-md-image')).toBeNull()
-    view.destroy()
-  })
-
   it('turns a rule into a rule and a fence into a code band', () => {
     const view = mount('---\n\n```js\nlet a = 1\n```')
     expect(view.contentDOM.querySelector('.cm-md-rule')).not.toBeNull()
@@ -300,92 +368,6 @@ describe('liveMarkdown', () => {
     const view = mount('Title\n=====')
     expect(lineClasses(view, 0)).not.toContain('cm-md-h1')
     expect(lineText(view, 1)).toBe('=====')
-    view.destroy()
-  })
-
-  it('draws a table — header, rows and all — instead of its source', () => {
-    const view = mount(TABLE)
-    const table = view.contentDOM.querySelector('.cm-md-table')
-    expect(table).not.toBeNull()
-    expect(table?.querySelector('.cm-md-table-head')?.textContent).toBe('NameValue')
-    const cells = [...(table?.querySelectorAll('.cm-md-table-cell') ?? [])].map((c) => c.textContent)
-    // the delimiter row (`---`) is read for its alignment and never drawn
-    expect(cells).toEqual(['Name', 'Value', 'a', '1'])
-    view.destroy()
-  })
-
-  it('lines the columns up: every row is a grid with the same count', () => {
-    const view = mount(TABLE)
-    const rows = [...view.contentDOM.querySelectorAll<HTMLElement>('.cm-md-table-row')]
-    expect(rows).toHaveLength(2)
-    // Same count and same fractions on every row — that is what puts the
-    // columns under one another, in place of a `table` element's own layout.
-    for (const row of rows) expect(row.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')
-    view.destroy()
-  })
-
-  it('takes each column\'s alignment off the delimiter row', () => {
-    const view = mount(TABLE)
-    const head = [...view.contentDOM.querySelectorAll<HTMLElement>('.cm-md-table-head .cm-md-table-cell')]
-    expect(head[0].style.textAlign).toBe('')
-    expect(head[1].style.textAlign).toBe('right')
-    expect(view.contentDOM.querySelector<HTMLElement>('.cm-md-table-row:not(.cm-md-table-head) .cm-md-table-cell')).not.toBeNull()
-    view.destroy()
-  })
-
-  it('draws what is inside a cell the way the editor draws it', () => {
-    const view = mount('| Name |\n| --- |\n| **bold** [docs](https://example.com) |')
-    const cells = view.contentDOM.querySelectorAll('.cm-md-table-cell')
-    expect(cells[1].querySelector('.cm-md-strong')?.textContent).toBe('bold')
-    // a link shows its label; the target is markup, as everywhere else
-    expect(cells[1].querySelector('.cm-md-link')?.textContent).toBe('docs')
-    expect(cells[1].textContent).toBe('bold docs')
-    view.destroy()
-  })
-
-  it('draws a mention inside a cell as the same chip', () => {
-    const view = mount(`| Who |\n| --- |\n| nostr:${NPUB} |`)
-    expect(view.contentDOM.querySelectorAll('.cm-md-table-cell .cm-md-mention')).toHaveLength(1)
-    view.destroy()
-  })
-
-  it('reveals the whole table, not one line of it, while the cursor is in it', () => {
-    const view = mount(TABLE)
-    focus(view, 3)
-    expect(view.contentDOM.querySelector('.cm-md-table')).toBeNull()
-    expect(lineText(view, 0)).toBe('| Name | Value |')
-    // the row below as well: half a table over half its source is neither
-    expect(lineText(view, 2)).toBe('| a | 1 |')
-    view.destroy()
-  })
-
-  it('puts the cursor in the cell that was clicked', () => {
-    const view = mount(TABLE)
-    const cells = view.contentDOM.querySelectorAll<HTMLElement>('.cm-md-table-cell')
-    // A replaced range takes no clicks otherwise: the editor ignores every
-    // event inside a widget, so the widget places the cursor itself.
-    cells[3].dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
-    expect(view.state.selection.main.head).toBe(TABLE.indexOf('1'))
-    // In a browser the click also focuses the editor and the focus event
-    // follows; jsdom fires none, so it is dispatched here as the editor does.
-    focus(view, TABLE.indexOf('1'))
-    expect(view.contentDOM.querySelector('.cm-md-table')).toBeNull()
-    view.destroy()
-  })
-
-  it('draws the table again once the cursor has left it', () => {
-    const view = mount(`${TABLE}\n\nafter`)
-    focus(view, 3)
-    expect(view.contentDOM.querySelector('.cm-md-table')).toBeNull()
-    focus(view, view.state.doc.length - 2)
-    expect(view.contentDOM.querySelector('.cm-md-table')).not.toBeNull()
-    view.destroy()
-  })
-
-  it('draws a table that is not a table at all — a paragraph with pipes — as it is', () => {
-    const view = mount('a | b\nnot a delimiter')
-    expect(view.contentDOM.querySelector('.cm-md-table')).toBeNull()
-    expect(lineText(view, 0)).toBe('a | b')
     view.destroy()
   })
 })

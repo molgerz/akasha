@@ -1,12 +1,13 @@
 import { syntaxTree } from '@codemirror/language'
-import { Decoration, EditorView, ViewPlugin, WidgetType } from '@codemirror/view'
-import type { DecorationSet, ViewUpdate } from '@codemirror/view'
-import { StateEffect, StateField } from '@codemirror/state'
+import { Decoration, EditorView, ViewPlugin, WidgetType, keymap } from '@codemirror/view'
+import type { Command, DecorationSet, ViewUpdate } from '@codemirror/view'
+import { EditorSelection, Prec } from '@codemirror/state'
 import type { EditorState, Extension, Range, Text } from '@codemirror/state'
 import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common'
 import { findMentions } from '../nostr/mentions'
-import { observeProfile } from '../nostr/profile-store'
-import { shortNpub, toNpub } from '../nostr/profile'
+import { ImageWidget } from './editor-image'
+import { separatorLine, tableAtomicRanges, tableState } from './editor-table'
+import { mentionChip, releaseMention } from './mention-chip'
 
 /**
  * Live formatting for the Markdown editor: what you type is drawn the way it
@@ -24,15 +25,14 @@ import { shortNpub, toNpub } from '../nostr/profile'
  * hold in their head, instead of "the markers of the construct my cursor
  * happens to be inside".
  *
- * **One construct is the exception: a table.** A pipe table is drawn as the
- * table it is — header, rows, column alignment — and shows its source as a
- * whole as soon as the cursor is anywhere inside it. Columns only line up if
- * every row is laid out against all the others, so half a table over half its
- * source would be neither; the unit of reveal for it is the construct, not the
- * line. An image is a single inline construct and follows the line rule like
- * everything else: drawn off the active line, as written on it. Both mirror
- * what the rendered page does, down to loading an image from wherever it points
- * (src/ui/Markdown.tsx, docs/09-security-privacy.md).
+ * **Two constructs are the exception, and each has a module of its own: a table
+ * and an image.** Neither ever shows its Markdown. A table *is* the grid it is
+ * edited in (src/ui/editor-table.ts): its columns only line up if every row is
+ * laid out against all the others, and the pipes are a second copy of the column
+ * count. An image is the picture that gets resized (src/ui/editor-image.ts) —
+ * `![alt](url)` on screen would be exactly the "weird Markdown view" this editor
+ * exists to avoid. Both are drawn the way `src/ui/Markdown.tsx` draws them on
+ * the page, down to loading an image from wherever it points.
  *
  * The sizes below mirror the `PAGE` scale in `src/ui/Markdown.tsx` — when one
  * of the two changes, the other has to follow, or write and read mode drift
@@ -135,39 +135,6 @@ class TaskWidget extends WidgetType {
   }
 }
 
-/** Unsubscribe handles per chip — see releaseMention. */
-const mentionCleanup = new WeakMap<HTMLElement, () => void>()
-
-/**
- * The chip for a mention, with the profile subscription that fills in the name.
- *
- * Not a method of the widget: a table cell draws the same chip from inside its
- * own widget (see TableWidget), so the DOM is built in exactly one place.
- */
-function mentionChip(pubkey: string): HTMLElement {
-  const span = document.createElement('span')
-  span.className = 'cm-md-mention'
-  const npub = toNpub(pubkey)
-  // The npub is what is stored and what identifies the person, so it stays
-  // reachable — in the tooltip here, next to the name in the page.
-  span.title = npub
-  span.textContent = `@${shortNpub(npub)}`
-  mentionCleanup.set(
-    span,
-    observeProfile(pubkey, (profile) => {
-      const name = profile?.displayName ?? profile?.name
-      span.textContent = `@${name ?? shortNpub(npub)}`
-    }),
-  )
-  return span
-}
-
-/** Drop a chip's subscription. The widget's DOM is discarded, never reused. */
-function releaseMention(dom: HTMLElement) {
-  mentionCleanup.get(dom)?.()
-  mentionCleanup.delete(dom)
-}
-
 class MentionWidget extends WidgetType {
   constructor(readonly pubkey: string) {
     super()
@@ -180,50 +147,6 @@ class MentionWidget extends WidgetType {
   }
   destroy(dom: HTMLElement) {
     releaseMention(dom)
-  }
-}
-
-/**
- * An image, drawn where it is written.
- *
- * `![alt](url)` is a single inline construct, so it follows the line rule like
- * everything else: the line the cursor is on shows the Markdown, every other
- * line shows the picture. Clicking the picture puts the cursor on its line,
- * which is how it is edited — no second affordance is needed for that.
- *
- * The source is loaded directly, ours or anybody's, exactly as on the rendered
- * page: a picture that only appears after a click is not a picture of anything.
- * docs/09-security-privacy.md
- */
-class ImageWidget extends WidgetType {
-  constructor(
-    readonly src: string,
-    readonly alt: string,
-    /** where the construct starts — what a click on the picture lands on */
-    readonly from: number,
-  ) {
-    super()
-  }
-  eq(other: ImageWidget) {
-    return other.src === this.src && other.alt === this.alt && other.from === this.from
-  }
-  toDOM(view: EditorView) {
-    const wrapper = document.createElement('span')
-    wrapper.className = 'cm-md-image'
-    const img = document.createElement('img')
-    img.src = this.src
-    img.alt = this.alt
-    img.loading = 'lazy'
-    // The editor ignores events inside a widget, so a replaced range takes no
-    // clicks at all: the picture places the cursor itself, and the line turns
-    // back into the Markdown it is written as.
-    img.addEventListener('mousedown', (event) => {
-      event.preventDefault()
-      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true })
-      view.focus()
-    })
-    wrapper.appendChild(img)
-    return wrapper
   }
 }
 
@@ -261,21 +184,22 @@ function hasTarget(node: SyntaxNode | null | undefined): boolean {
   return false
 }
 
-/** The target of a `[text](url)` link or an `![alt](url)` image. */
-function childUrl(node: SyntaxNode, doc: Text): string | null {
+/**
+ * The target of a `![alt](url)` image, with the range it occupies.
+ *
+ * The range is what a resize rewrites: only the URL changes, so the alt text,
+ * a title and the rest of the line are left exactly as the writer had them.
+ */
+function imageTarget(node: SyntaxNode, doc: Text): { from: number; to: number; text: string } | null {
   for (let child = node.firstChild; child; child = child.nextSibling) {
-    if (child.name === 'URL') return doc.sliceString(child.from, child.to)
+    if (child.name === 'URL') {
+      return { from: child.from, to: child.to, text: doc.sliceString(child.from, child.to) }
+    }
   }
   return null
 }
 
-/**
- * The alt text of an image — what is written between the brackets.
- *
- * It is not drawn in the picture's place (that is what used to make an image
- * look like a paragraph that had lost it); it travels into the `alt` attribute,
- * where it is what a screen reader and a broken load fall back to.
- */
+/** The alt text of an image — what is written between the brackets. */
 function imageAlt(node: SyntaxNode, doc: Text): string {
   let alt = ''
   let pos = node.from
@@ -505,17 +429,20 @@ function build(view: EditorView): { decorations: DecorationSet; atomic: Decorati
           }
 
           case 'Image': {
-            // Drawn off the active line, as written on it — the two
-            // `hasAncestor(node, 'Image')` guards on LinkMark and URL below are
-            // what leaves the Markdown alone while it is being edited.
-            if (raw(node.from, node.to)) return
-            const src = childUrl(node.node, state.doc)
-            if (!src) return
-            decos.push(
-              Decoration.replace({
-                widget: new ImageWidget(src, imageAlt(node.node, state.doc), node.from),
-              }).range(node.from, node.to),
-            )
+            // The picture, never the Markdown — that is what the editor is for.
+            // The two `hasAncestor(node, 'Image')` guards on LinkMark and URL
+            // below become unreachable with it, but they stay: a decoration
+            // added inside a replaced range is a second answer to a question
+            // that already has one. src/ui/editor-image.ts
+            const target = imageTarget(node.node, state.doc)
+            if (!target) return
+            const deco = Decoration.replace({
+              widget: new ImageWidget(target.text, imageAlt(node.node, state.doc), target.from, target.to),
+            })
+            decos.push(deco.range(node.from, node.to))
+            // One thing, like a mention chip: one Backspace removes the whole
+            // construct, and the caret steps over it.
+            atoms.push(deco.range(node.from, node.to))
             return
           }
 
@@ -579,258 +506,6 @@ function build(view: EditorView): { decorations: DecorationSet; atomic: Decorati
   return { decorations: Decoration.set(decos, true), atomic: Decoration.set(atoms, true) }
 }
 
-// — tables —
-//
-// A pipe table is the one construct that cannot be drawn line by line: columns
-// only line up if every row is laid out against all the others, and a row drawn
-// over its neighbour's source is neither. So a table is drawn as a whole — one
-// replaced range, from the header line to the last row — and shows its source
-// as a whole the moment the cursor is anywhere inside it.
-//
-// That range spans line breaks, and a ViewPlugin is not allowed to replace line
-// breaks ("Decorations that replace line breaks may not be specified via
-// plugins"), so the tables live in a StateField of their own — the same shape
-// CodeMirror's own folding uses. A state field cannot see whether the editor is
-// focused, which is a view property, so that fact reaches it as an effect:
-// `EditorView.focusChangeEffect` is dispatched by the editor on every focus
-// change, and the field reads it in its update.
-
-/** One run of text in a cell, or a mention chip in it. */
-type Piece = { kind: 'text'; text: string; cls: string } | { kind: 'mention'; pubkey: string }
-
-/** One cell: where it starts in the document, and what is drawn in it. */
-type Cell = { from: number; pieces: Piece[] }
-
-type TableData = {
-  head: Cell[]
-  rows: Cell[][]
-  /** the alignment each column asks for with `:---`, `:---:` or `---:` */
-  align: (string | null)[]
-}
-
-/**
- * The inline classes a cell carries — the same ones the editor puts on a
- * paragraph, because a cell is read the same way. A link shows its label; its
- * target is markup, exactly as in the LinkMark case below.
- */
-const CELL_CLASS: Record<string, string> = {
-  Emphasis: 'cm-md-em',
-  StrongEmphasis: 'cm-md-strong',
-  Strikethrough: 'cm-md-strike',
-  InlineCode: 'cm-md-inline-code',
-  Link: 'cm-md-link',
-}
-
-/** Markup and link targets: not text, so a cell never shows them. */
-const CELL_MARKUP = new Set(['EmphasisMark', 'StrikethroughMark', 'CodeMark', 'LinkMark', 'URL'])
-
-/** The pieces of one cell, read off the syntax tree. */
-function cellPieces(cell: SyntaxNode, doc: Text): Piece[] {
-  const pieces: Piece[] = []
-
-  const emit = (text: string, cls: string) => {
-    if (!text) return
-    // A mention is not Markdown, so the syntax tree knows nothing about it and
-    // the text is scanned exactly as it is everywhere else. Not inside code.
-    const spans = cls.includes('inline-code') ? [] : findMentions(text)
-    let pos = 0
-    for (const span of spans) {
-      if (span.from > pos) pieces.push({ kind: 'text', text: text.slice(pos, span.from), cls })
-      pieces.push({ kind: 'mention', pubkey: span.pubkey })
-      pos = span.to
-    }
-    if (pos < text.length) pieces.push({ kind: 'text', text: text.slice(pos), cls })
-  }
-
-  const walk = (node: SyntaxNode, cls: string) => {
-    let pos = node.from
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      // Text is not a node: it is whatever lies between two markup nodes, so
-      // the gap is read before the child is looked at.
-      if (child.from > pos) emit(doc.sliceString(pos, child.from), cls)
-      if (CELL_MARKUP.has(child.name)) {
-        pos = child.to
-        continue
-      }
-      const inner = CELL_CLASS[child.name]
-      walk(child, inner ? [cls, inner].filter(Boolean).join(' ') : cls)
-      pos = child.to
-    }
-    if (pos < node.to) emit(doc.sliceString(pos, node.to), cls)
-  }
-
-  walk(cell, '')
-  return pieces
-}
-
-function rowCells(row: SyntaxNode, doc: Text): Cell[] {
-  const cells: Cell[] = []
-  for (let child = row.firstChild; child; child = child.nextSibling) {
-    // The cell's own position is kept with it: it is where a click into the
-    // drawn table puts the cursor. See TableWidget.toDOM.
-    if (child.name === 'TableCell') cells.push({ from: child.from, pieces: cellPieces(child, doc) })
-  }
-  return cells
-}
-
-/**
- * What the delimiter row says about alignment. It is the one line of a table
- * that carries information without being content, which is why it is read here
- * and never drawn.
- */
-function delimiterAlign(delimiter: SyntaxNode, doc: Text): (string | null)[] {
-  const parts = doc.sliceString(delimiter.from, delimiter.to).trim().split('|')
-  if (parts[0]?.trim() === '') parts.shift()
-  if (parts[parts.length - 1]?.trim() === '') parts.pop()
-  return parts.map((raw) => {
-    const cell = raw.trim()
-    if (!/^:?-+:?$/.test(cell)) return null
-    const left = cell.startsWith(':')
-    const right = cell.endsWith(':')
-    if (left && right) return 'center'
-    if (right) return 'right'
-    if (left) return 'left'
-    return null
-  })
-}
-
-function tableData(table: SyntaxNode, doc: Text): TableData | null {
-  let head: Cell[] = []
-  const rows: Cell[][] = []
-  let align: (string | null)[] = []
-  for (let child = table.firstChild; child; child = child.nextSibling) {
-    if (child.name === 'TableHeader') head = rowCells(child, doc)
-    else if (child.name === 'TableDelimiter') align = delimiterAlign(child, doc)
-    else if (child.name === 'TableRow') rows.push(rowCells(child, doc))
-  }
-  if (head.length === 0) return null
-  return { head, rows, align }
-}
-
-/**
- * The table, drawn the way the page draws it: the same header band, the same
- * one rule under each row, the same `px-3 py-2` cells at 14px. Read against
- * `PAGE` and the `table`/`th`/`td` components in `src/ui/Markdown.tsx`.
- *
- * Every row is a grid with the same number of columns of the same width, which
- * is what puts the columns under one another. A real `table` element cannot be
- * used here: its layout does not survive being put inside a line of text.
- */
-class TableWidget extends WidgetType {
-  constructor(readonly table: TableData) {
-    super()
-  }
-  eq(other: TableWidget) {
-    return JSON.stringify(other.table) === JSON.stringify(this.table)
-  }
-  toDOM(view: EditorView) {
-    const root = document.createElement('div')
-    root.className = 'cm-md-table'
-    // The editor ignores events inside a widget, so a replaced range takes no
-    // clicks at all — without this, clicking the drawn table would do nothing.
-    // Clicking a cell puts the cursor into that cell instead, and that is what
-    // makes the table hand its source back. src/ui/markdown-live.ts, the
-    // "reveals as a whole" note.
-    root.addEventListener('mousedown', (event) => {
-      const cell = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-pos]')
-      if (!cell?.dataset.pos) return
-      event.preventDefault()
-      view.dispatch({ selection: { anchor: Number(cell.dataset.pos) }, scrollIntoView: true })
-      view.focus()
-    })
-    root.appendChild(tableRow(this.table.head, this.table.align, true))
-    for (const cells of this.table.rows) {
-      root.appendChild(tableRow(cells, this.table.align, false))
-    }
-    return root
-  }
-  destroy(dom: HTMLElement) {
-    // Every chip in a cell carries a profile subscription of its own, and
-    // CodeMirror only calls destroy for the widget's own DOM.
-    for (const chip of dom.querySelectorAll<HTMLElement>('.cm-md-mention')) releaseMention(chip)
-  }
-}
-
-function tableRow(cells: Cell[], align: (string | null)[], head: boolean): HTMLElement {
-  const row = document.createElement('div')
-  row.className = head ? 'cm-md-table-row cm-md-table-head' : 'cm-md-table-row'
-  row.style.gridTemplateColumns = `repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr))`
-  cells.forEach((source, index) => {
-    const cell = document.createElement('div')
-    cell.className = 'cm-md-table-cell'
-    cell.dataset.pos = String(source.from)
-    const alignment = align[index]
-    if (alignment) cell.style.textAlign = alignment
-    for (const piece of source.pieces) {
-      if (piece.kind === 'mention') {
-        cell.appendChild(mentionChip(piece.pubkey))
-      } else if (piece.cls) {
-        const span = document.createElement('span')
-        span.className = piece.cls
-        span.textContent = piece.text
-        cell.appendChild(span)
-      } else {
-        cell.appendChild(document.createTextNode(piece.text))
-      }
-    }
-    row.appendChild(cell)
-  })
-  return row
-}
-
-/**
- * The effect the extension makes out of a focus change — exported because that
- * is the mechanism, not an implementation detail: the editor dispatches it via
- * `EditorView.focusChangeEffect` on gaining and losing focus, and the table
- * field reads it, because a state field cannot see the view.
- */
-export const editorFocus = StateEffect.define<boolean>()
-
-function tableDecorations(state: EditorState, focused: boolean): DecorationSet {
-  const ranges: Range<Decoration>[] = []
-  const regions = revealedLines(state, focused)
-  syntaxTree(state).iterate({
-    enter: (node) => {
-      if (node.name !== 'Table') return
-      // The whole construct reveals at once — the grid only exists as a whole,
-      // and half a table over half its source is neither. The source is back
-      // the moment the cursor is anywhere in the table, and the table is drawn
-      // whenever it is not: the line rule, one construct up, and the one place
-      // this file has an exception to it.
-      if (regions.some((region) => node.from <= region.to && node.to >= region.from)) return
-      const table = tableData(node.node, state.doc)
-      if (!table) return
-      ranges.push(Decoration.replace({ widget: new TableWidget(table) }).range(node.from, node.to))
-    },
-  })
-  return Decoration.set(ranges, true)
-}
-
-type TableState = { focused: boolean; decorations: DecorationSet }
-
-const tableState = StateField.define<TableState>({
-  create: (state) => ({ focused: false, decorations: tableDecorations(state, false) }),
-  update: (value, transaction) => {
-    let focused = value.focused
-    for (const effect of transaction.effects) {
-      if (effect.is(editorFocus)) focused = effect.value
-    }
-    if (
-      !transaction.docChanged &&
-      !transaction.selection &&
-      focused === value.focused &&
-      // The parser finishes lazily and announces the finished tree with an
-      // empty transaction. This is not a shortcut: without it the field would
-      // keep the tree from before the table was parsed and never draw it.
-      syntaxTree(transaction.startState) === syntaxTree(transaction.state)
-    ) {
-      return value
-    }
-    return { focused, decorations: tableDecorations(transaction.state, focused) }
-  },
-  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
-})
-
 class LivePreview {
   decorations: DecorationSet
   atomic: DecorationSet
@@ -859,13 +534,208 @@ class LivePreview {
 }
 
 /**
+ * The block a line holds when it holds nothing else: an image on a line of its
+ * own, or a table — which starts and ends at line boundaries by construction.
+ */
+function edgeBlock(state: EditorState, from: number, to: number): 'image' | 'table' | null {
+  let found: 'image' | 'table' | null = null
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name !== 'Image' && node.name !== 'Table') return
+      if (node.from > from || node.to < to) return
+      if (state.doc.sliceString(from, node.from).trim()) return
+      if (state.doc.sliceString(node.to, to).trim()) return
+      found = node.name === 'Image' ? 'image' : 'table'
+    },
+  })
+  return found
+}
+
+/** Does a table end exactly at `pos`? */
+function tableEndsAt(state: EditorState, pos: number): boolean {
+  let found = false
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name === 'Table' && node.to === pos) found = true
+    },
+  })
+  return found
+}
+
+/**
+ * What to insert when text is typed at the very start or the very end of a line
+ * that holds nothing but a block — or `null` when the line is an ordinary one.
+ *
+ * Writing at a table's edge used to append to the table's own last row, where a
+ * character after the closing pipe becomes another column of that row alone.
+ * Writing at an image's edge used to put text beside the picture. Both are
+ * block-level things: the text belongs on a new line outside them.
+ *
+ * Under a *table* it needs a blank line, not just a new one: a plain line
+ * directly beneath a row is another row to GFM, so the text would come back as a
+ * cell of the table instead of as a paragraph. A picture has nothing to join.
+ *
+ * The same goes one line further down. Enter at the table's edge leaves an empty
+ * line under it, and while that line is empty the table has ended — but the
+ * first character written on it turns it into another row. So the blank line is
+ * written together with the text, and the writer never sees the table's last row
+ * swallow what they type outside it.
+ */
+export function edgeInsert(
+  state: EditorState,
+  from: number,
+  to: number,
+  text: string,
+): { from: number; to: number; insert: string } | null {
+  if (from !== to || text.length === 0) return null
+  const line = state.doc.lineAt(from)
+  if (from !== line.from && from !== line.to) return null
+  const block = edgeBlock(state, line.from, line.to)
+  if (block) {
+    if (from === line.from) return { from, to, insert: text + '\n' }
+    return { from, to, insert: (block === 'table' ? '\n\n' : '\n') + text }
+  }
+  // The empty line Enter leaves under a table — see above. Only an empty one:
+  // where there is already text, the row is already a row, and splitting it
+  // would move the writer's words around.
+  if (from === line.from && line.from === line.to && line.number > 1) {
+    if (tableEndsAt(state, state.doc.line(line.number - 1).to)) {
+      return { from, to, insert: '\n' + text }
+    }
+  }
+  return null
+}
+
+/**
+ * The editor's own typing, with those two edges kept out of the block. A cell
+ * input is a DOM field inside a widget, so nothing typed in one comes through
+ * here — this is the text cursor's path only.
+ */
+const blockEdges: Extension = EditorView.inputHandler.of((view, from, to, text) => {
+  const change = edgeInsert(view.state, from, to, text)
+  if (!change) return false
+  view.dispatch({
+    changes: change,
+    // The typed text is at the end of what is inserted, whichever side it went.
+    selection: EditorSelection.cursor(from + change.insert.length),
+    scrollIntoView: true,
+    userEvent: 'input.type',
+  })
+  return true
+})
+
+/**
+ * Backspace at the start of the first line under a table.
+ *
+ * The blank line that separates a table from the paragraph under it is part of
+ * the table's own range: it is not drawn, and the caret is not meant to stand
+ * in it. It is still a line in the document, so the default Backspace would
+ * delete the newline that ends it and pull the paragraph up against the last
+ * row — where GFM reads a plain line as another row. The paragraph would come
+ * back as a cell of the table, its words inside the grid instead of under it.
+ * There is nothing on screen to join the two, so the key does nothing.
+ */
+const backspaceUnderTable: Command = (view) => {
+  const { state } = view
+  for (const range of state.selection.ranges) {
+    if (!range.empty) return false
+    const line = state.doc.lineAt(range.head)
+    if (range.head !== line.from || line.number < 3) return false
+    const blank = state.doc.line(line.number - 1)
+    if (blank.text.trim().length > 0) return false
+    if (!tableEndsAt(state, state.doc.line(line.number - 2).to)) return false
+  }
+  return true
+}
+
+/**
+ * Enter at a table's edge.
+ *
+ * The caret to the right of the grid sits at the end of the table's own line,
+ * and the line under it is the blank one GFM needs between a row and a
+ * paragraph. Pressed there, the key used to insert a newline and leave the
+ * caret *in* that blank line: it has no height, so the cursor appeared at the
+ * bottom-left corner of the card, and only typing a character — or pressing
+ * Enter once more — moved it on to the paragraph line the editor keeps under
+ * the table. Typing on that same spot has gone to the paragraph line all along
+ * (edgeInsert above); the key did not.
+ *
+ * So the key goes where the character goes. The paragraph line is the line
+ * after the blank one: if it is empty it is already waiting for the writer and
+ * the caret simply moves onto it, and if there are words there already, Enter
+ * opens a new line above them, the way it does at the start of any line. A page
+ * that stops at the grid — saved before the table got its trailing lines —
+ * first grows the blank line and the paragraph line, exactly as a click below
+ * the grid does. src/ui/MarkdownEditor.tsx
+ */
+const enterAfterTable: Command = (view) => {
+  const { state } = view
+  if (state.selection.ranges.length !== 1) return false
+  const range = state.selection.main
+  if (!range.empty) return false
+
+  const line = state.doc.lineAt(range.head)
+  // Two places the caret stands "at the table": the end of the grid's own line,
+  // and the table's hidden blank line, where the key below used to leave it.
+  const gridEnd = line.number > 1 ? state.doc.line(line.number - 1).to : -1
+  const onGrid = range.head === line.to && tableEndsAt(state, line.to)
+  const onSeparator = line.text.trim().length === 0 && tableEndsAt(state, gridEnd)
+  if (!onGrid && !onSeparator) return false
+
+  const tableTo = onGrid ? line.to : gridEnd
+  if (tableTo === state.doc.length) {
+    // The page stops at the grid, so there is no line under it to put the caret
+    // on. Open both — the blank line that keeps a paragraph out of the table,
+    // and the line to write on.
+    view.dispatch({
+      changes: { from: tableTo, insert: '\n\n' },
+      selection: EditorSelection.cursor(tableTo + 2),
+      scrollIntoView: true,
+      userEvent: 'input',
+    })
+    return true
+  }
+
+  const separator = separatorLine(state, tableTo)
+  const writerFrom = separator ? separator.to + 1 : tableTo + 1
+
+  if (state.doc.lineAt(writerFrom).text.trim().length === 0) {
+    // The paragraph line is already there and empty: the caret moves onto it,
+    // which is the line a character typed here would have landed on.
+    view.dispatch({
+      selection: EditorSelection.cursor(writerFrom),
+      scrollIntoView: true,
+      userEvent: 'select',
+    })
+    return true
+  }
+
+  // There is a paragraph under the table already: Enter opens a line above it.
+  view.dispatch({
+    changes: { from: writerFrom, insert: '\n' },
+    selection: EditorSelection.cursor(writerFrom),
+    scrollIntoView: true,
+    userEvent: 'input',
+  })
+  return true
+}
+
+/**
  * The editor's live formatting, as one extension: the line-by-line decorations,
- * the focus fact a state field cannot see, and the tables — which a plugin is
- * not allowed to draw.
+ * the tables (a state field — a plugin may not replace line breaks), the fact
+ * that a table is one thing the caret walks over, the block edges above, and
+ * the one key that has to know where a table ends.
  */
 export const liveMarkdown: Extension = [
-  EditorView.focusChangeEffect.of((_state, focusing) => editorFocus.of(focusing)),
   tableState,
+  tableAtomicRanges,
+  blockEdges,
+  Prec.high(
+    keymap.of([
+      { key: 'Backspace', run: backspaceUnderTable },
+      { key: 'Enter', run: enterAfterTable },
+    ]),
+  ),
   ViewPlugin.fromClass(LivePreview, {
     decorations: (plugin) => plugin.decorations,
     provide: (plugin) =>

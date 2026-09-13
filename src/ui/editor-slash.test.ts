@@ -12,8 +12,8 @@ import { emojiCompletion, mentionCompletion } from './editor-complete'
 const slash = slashInsertCompletion()
 
 /** the context the editor would hand a source: cursor at the end of `doc` */
-function at(doc: string) {
-  return new CompletionContext(EditorState.create({ doc }), doc.length, false)
+function at(doc: string, pos = doc.length) {
+  return new CompletionContext(EditorState.create({ doc }), pos, false)
 }
 
 /** the labels the source offers for a document whose cursor is at its end */
@@ -27,8 +27,8 @@ function options(doc: string): string[] | null {
  * exactly the way CodeMirror runs it (`applyCompletion`), so a forgotten
  * function — which would insert the label instead — is caught here.
  */
-function apply(doc: string, label: string, onAttach?: () => void) {
-  const result = slashInsertCompletion(onAttach)(at(doc)) as CompletionResult
+function apply(doc: string, label: string, onAttach?: () => void, pos = doc.length) {
+  const result = slashInsertCompletion(onAttach)(at(doc, pos)) as CompletionResult
   const option = result.options.find((entry) => entry.label === label)
   expect(option, `no "${label}" entry`).toBeDefined()
 
@@ -121,38 +121,78 @@ describe('the / trigger', () => {
 })
 
 describe('what a / entry writes', () => {
-  it('writes the 2×2 table skeleton and selects the first header cell', () => {
+  it('writes the 3×2 table skeleton and selects the first header cell', () => {
     const { text, from, to } = apply('/', 'table')
-    expect(text).toBe(TABLE_SKELETON)
-    expect(TABLE_SKELETON).toContain('| Column | Value |')
+    // the skeleton plus the blank line under it and the line to write on
+    expect(text).toBe(TABLE_SKELETON + '\n\n')
+    // a header and *two* body rows — one row would be a table to extend before
+    // it could be typed into
+    expect(TABLE_SKELETON.split('\n')).toEqual([
+      '| Column | Value |',
+      '| --- | --- |',
+      '|  |  |',
+      '|  |  |',
+    ])
     // the placeholder is selected, so typing replaces it instead of jamming
     // against the word "Column"
     expect(text.slice(from, to)).toBe('Column')
     expect(from).toBe(TABLE_SKELETON.indexOf('Column'))
   })
 
-  it('writes the table where the slash was, keeping the text above it', () => {
-    // the slash sat on its own line, so the newline that opened that line
-    // stays; the skeleton's own blank line follows it
-    expect(apply('hello\n/ta', 'table').text).toBe('hello\n' + TABLE_SKELETON)
+  it('writes the table where the slash was, on the line it stood on', () => {
+    // The slash is the first character of its line, so the table already has a
+    // line of its own: a blank line before it would only push it down and leave
+    // the empty line behind. A table under a paragraph is a table to GFM.
+    // Under it, the blank line the table needs *and* the line to write on.
+    expect(apply('hello\n/ta', 'table').text).toBe('hello\n' + TABLE_SKELETON + '\n\n')
   })
 
+  it('keeps the line under a new table out of the table', () => {
+    // A plain line right under a row is another row to GFM's parser: without
+    // the blank line the writer's paragraph comes back as a cell of the table,
+    // and the table's widget draws it as one — the paragraph is simply gone.
+    const doc = 'hello\n/table\nbelow'
+    expect(apply(doc, 'table', undefined, 12).text).toBe('hello\n' + TABLE_SKELETON + '\n\nbelow')
+  })
+
+  it('keeps text that followed the query on the same line out of the table', () => {
+    // `/table` typed in front of existing text — `/tableunten`. One newline
+    // would put that text on the line directly under the last row, which is a
+    // row to GFM; it needs a line of its own and the blank line.
+    // the cursor stands right after the query, with `unten` behind it
+    expect(apply('/tableunten', 'table', undefined, 6).text).toBe(TABLE_SKELETON + '\n\nunten')
+  })
+  it('leaves a line to write on when nothing follows the table', () => {
+    // The table used to be the last line of the document, and then there was
+    // nothing under the grid at all: the writer put a cursor in the empty space
+    // the editor leaves at the bottom and could not type. The blank line the
+    // table needs comes with the paragraph line it separates it from.
+    expect(apply('hello\n/table', 'table').text).toBe('hello\n' + TABLE_SKELETON + '\n\n')
+  })
   it('writes a fenced pair with the cursor on the language line', () => {
     const { text, from } = apply('/', 'code')
-    expect(text).toBe('\n\n```\n\n```\n')
-    expect(text.slice(0, from)).toBe('\n\n```')
+    expect(text).toBe('```\n\n```\n')
+    expect(text.slice(0, from)).toBe('```')
   })
 
   it('writes a quote marker and puts the cursor after it', () => {
     const { text, from } = apply('/', 'quote')
-    expect(text).toBe('\n> ')
-    expect(from).toBe(3)
+    expect(text).toBe('> ')
+    expect(from).toBe(2)
   })
 
   it('writes a divider and puts the cursor at the end of its line', () => {
     const { text, from } = apply('/', 'divider')
-    expect(text).toBe('\n---\n')
-    expect(from).toBe(4)
+    expect(text).toBe('---\n')
+    expect(from).toBe(3)
+  })
+
+  it('gives the divider a blank line above only when a paragraph is there', () => {
+    // `text` over `---` is a Setext heading to every client that does not turn
+    // that off the way this app does — the one block that needs the blank line.
+    expect(apply('hello\n/di', 'divider').text).toBe('hello\n\n---\n')
+    // with a blank line already there, one is enough
+    expect(apply('hello\n\n/di', 'divider').text).toBe('hello\n\n---\n')
   })
 
   it('inserts nothing for the attachment entry and calls the picker', () => {

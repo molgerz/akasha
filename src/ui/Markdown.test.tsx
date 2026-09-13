@@ -1,9 +1,24 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { nip19 } from 'nostr-tools'
 import { Markdown } from './Markdown'
+
+// A mention chip asks the profile store for a name, and the real store opens a
+// WebSocket to VITE_PROFILE_RELAYS — in jsdom a real connection whose events
+// belong to another realm, and whose retry timer outlives the test file. These
+// tests assert the chip's npub, never a fetched name.
+vi.mock('../nostr/profile-store', () => ({
+  peekProfile: () => null,
+  primeProfiles: () => {},
+  cacheProfile: () => {},
+  useProfile: () => null,
+  observeProfile: (_pubkey: string, listener: (profile: null) => void) => {
+    listener(null)
+    return () => {}
+  },
+}))
 
 /**
  * The rendered page, checked against the editor's live formatting: a mention
@@ -32,6 +47,24 @@ describe('Markdown', () => {
     // mention then arrives as a plain link showing all 63 characters.
     expect(page.querySelector('a')).toBeNull()
     expect(page.textContent).not.toContain(NPUB)
+  })
+
+  it('marks its tables so that an empty cell still gets a line box', () => {
+    const page = render('| a | b |\n| --- | --- |\n|  |  |')
+    // src/index.css is what gives the line box: a cell with nothing in it has
+    // none, so an empty row would come out a line shorter than the header.
+    expect(page.querySelector('table')?.classList.contains('page-table')).toBe(true)
+  })
+  it('draws an image at the width the editor wrote into its URL', () => {
+    const page = render('![logo](https://example.com/logo.svg#width=320)')
+    // What is made smaller in the editor is smaller on the page; `max-w-full`
+    // still caps it, and the fragment is stripped from the request.
+    expect(page.querySelector('img')?.style.width).toBe('320px')
+  })
+
+  it('leaves an image with no width in its URL at its own size', () => {
+    const page = render('![logo](https://example.com/logo.svg)')
+    expect(page.querySelector('img')?.style.width).toBe('')
   })
 
   it('draws a written nostr link as a chip as well', () => {

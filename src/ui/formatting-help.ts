@@ -37,5 +37,9 @@ export const FORMATTING_RULES: FormattingRule[] = [
   // The one affordance in this list rather than a piece of Markdown, but the
   // fold is read precisely by somebody asking "how do I get a table?" —
   // src/ui/editor-slash.ts
-  { syntax: '/', meaning: 'Insert menu — table, image/attachment, code block, quote or divider' },
+  {
+    syntax: '/',
+    meaning:
+      'Insert menu — table, image/attachment, code block, quote or divider. A table is edited in place: click a cell and use the handles on the table\'s left and top edges for rows, columns and alignment',
+  },
 ]

@@ -39,29 +39,46 @@ export type SlashCommand = {
   select?: number
   /** runs instead of inserting text — the attachment opens the file picker */
   attach?: boolean
+  /**
+   * needs a blank line above it when the line before is not blank. Only `---`
+   * does: under a paragraph it is a Setext heading to every client that does not
+   * turn that off the way this app does. A table, a fence and a quote all take a
+   * paragraph in their stride — checked against GFM's reference parser, which is
+   * what the page renders with. src/ui/editor-slash.ts, docs/13-editing.md
+   */
+  blankBefore?: boolean
+  /**
+   * needs a blank line *below* it when something follows: a plain line directly
+   * under a table row is another row to GFM's parser, so the writer's paragraph
+   * would come back as a cell of the table — the table's widget would draw it as
+   * one, and the paragraph would be gone. Only the table does this.
+   */
+  blankAfter?: boolean
 }
 
 /**
- * The 2×2 skeleton the table entry writes: a header, the separator and one
- * empty row. Exported so the table-help work (the ticket's blocker) reuses the
- * one shape instead of copying it.
+ * The 3×2 skeleton the table entry writes: a header, the separator and two
+ * empty rows. Two, not one, because one row is a table you immediately have to
+ * extend — the skeleton is there to be typed *into*. Exported so the table-help
+ * work (the ticket's blocker) reuses the one shape instead of copying it.
  *
- * The leading blank line is deliberate. A table typed directly under a
- * paragraph needs it, and `---` under a paragraph is a Setext heading in
- * CommonMark — this app turns Setext off (`src/ui/markdown-flavour.ts`), but
- * the stored text still goes to foreign clients, so the menu writes text that
- * is a table everywhere.
+ * No blank line above it: the `/` stands at the start of its line, so the table
+ * already has one of its own, and a table under a paragraph is a table to GFM's
+ * own reference parser — which is what the page renders with and what every
+ * other client follows. An unconditional leading newline only pushed the table
+ * down and left blank lines behind it.
  */
-export const TABLE_SKELETON = '\n\n| Column | Value |\n| --- | --- |\n|  |  |'
+export const TABLE_SKELETON = '| Column | Value |\n| --- | --- |\n|  |  |\n|  |  |'
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     label: 'table',
     displayLabel: 'Table',
-    detail: '2×2 with a header row',
+    detail: '3×2 with a header row',
     insert: TABLE_SKELETON,
     cursor: TABLE_SKELETON.indexOf('Column'),
     select: 'Column'.length,
+    blankAfter: true,
   },
   {
     label: 'image',
@@ -77,25 +94,28 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     displayLabel: 'Code block',
     detail: 'Fenced, with a language line',
     aliases: ['codeblock', 'fence'],
-    insert: '\n\n```\n\n```\n',
+    insert: '```\n\n```\n',
     // the empty info string after the opening fence, ready for a language
-    cursor: 5,
+    cursor: 3,
   },
   {
     label: 'quote',
     displayLabel: 'Quote',
     detail: 'A blockquote',
     aliases: ['blockquote'],
-    insert: '\n> ',
-    cursor: 3,
+    insert: '> ',
+    cursor: 2,
   },
   {
     label: 'divider',
     displayLabel: 'Divider',
     detail: 'A horizontal rule',
     aliases: ['rule', 'hr'],
-    insert: '\n---\n',
-    cursor: 4,
+    insert: '---\n',
+    cursor: 3,
+    // `text` over `---` is a Setext heading everywhere Setext is not turned
+    // off, so this one does need the blank line to break the paragraph above.
+    blankBefore: true,
   },
 ]
 
@@ -129,11 +149,51 @@ function applyCommand(
     return
   }
 
+  // The command stands at the start of its line, so the block already has a
+  // line of its own — see `blankBefore` for the one entry that needs more.
+  const line = view.state.doc.lineAt(from)
+  const above = line.number > 1 ? view.state.doc.line(line.number - 1).text : ''
+  const lead = command.blankBefore && above.trim().length > 0 ? '\n' : ''
+
+  // What stands after the block once it is written. See `blankAfter`: a table
+  // takes the line under it, so whatever follows has to be separated from it by
+  // a blank line — and how many newlines that takes depends on where the text
+  // sits relative to the typed query.
+  //
+  // The blank line is not optional even when nothing follows the table. Without
+  // it the table is the last line of the document, and then there is nothing
+  // under the grid to click or write into at all: the writer sees the empty
+  // space the editor leaves at the bottom of the page, puts a cursor in it and
+  // cannot type. So the table always gets its blank line, and the line under
+  // that one is where the next paragraph goes.
+  const rest = view.state.doc.sliceString(to)
+  let tail = ''
+  if (command.blankAfter) {
+    if (rest.length === 0) {
+      // Nothing follows at all: the blank line and the line to write on.
+      tail = '\n\n'
+    } else if (rest.startsWith('\n')) {
+      // The query stood at the end of its line: the first line of `rest` is
+      // empty, and the text under it needs one more newline before it — as does
+      // a document that stops right there, so that a line is left to write on.
+      if (rest.length === 1 || rest.slice(1).split('\n')[0].trim().length > 0) tail = '\n'
+    } else {
+      // Text follows on the same line as the query. It needs a line of its own
+      // *and* the blank line, or it becomes the table's last row.
+      tail = '\n\n'
+    }
+  }
+
+  const insert = lead + command.insert + tail
+
   view.dispatch({
-    changes: { from, to, insert: command.insert },
+    changes: { from, to, insert },
     selection: command.select
-      ? EditorSelection.range(from + command.cursor, from + command.cursor + command.select)
-      : EditorSelection.cursor(from + command.cursor),
+      ? EditorSelection.range(
+          from + lead.length + command.cursor,
+          from + lead.length + command.cursor + command.select,
+        )
+      : EditorSelection.cursor(from + lead.length + command.cursor),
     scrollIntoView: true,
     userEvent: 'input.complete',
   })

@@ -11,6 +11,7 @@ import { shortNpub, toNpub } from '../nostr/profile'
 import { remarkMentions } from './markdown-mentions'
 import { rehypeBlankLines } from './markdown-blank-lines'
 import { remarkNoSetextHeadings } from './markdown-flavour'
+import { imageWidth } from './image-width'
 
 /**
  * Sanitising is mandatory, not optional: content comes from arbitrary keys.
@@ -116,12 +117,18 @@ const COMPACT: Scale = {
  */
 function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
   if (!src) return null
+  // The width a resize chose lives in the URL's fragment. Drawing it here is
+  // the other half of that contract: what is made smaller in the editor is
+  // smaller on the page. `max-w-full` still caps it on a narrow screen.
+  // src/ui/image-width.ts
+  const width = imageWidth(src)
   return (
     <img
       src={src}
       alt={alt ?? ''}
       title={title}
       loading="lazy"
+      style={width === null ? undefined : { width: width + 'px' }}
       className="my-6 max-w-full rounded-lg border border-line"
     />
   )
@@ -396,22 +403,23 @@ export function Markdown({
             <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} title={title} />
           ),
           // A wide table may exceed the measure — but then it scrolls on its
-          // own instead of stretching the page.
+          // own instead of stretching the page. `page-table` is what gives an
+          // empty cell the line box it otherwise has not — src/index.css.
           table: ({ node: _node, className, ...props }) => (
             <div className="my-6 overflow-x-auto rounded-lg border border-line">
               <table
-                className={cx('w-full border-collapse text-sm', className)}
+                className={cx('page-table w-full border-collapse text-sm', className)}
                 {...props}
               />
             </div>
           ),
-          // Rules between rows only. Vertical ones as well turn a table in a
-          // document into a spreadsheet, and the columns are already separated
-          // by the space between them.
+          // A rule under every row and between every column — the same grid the
+          // editor draws. The last column has none, so the card's own border is
+          // not doubled. src/ui/MarkdownEditor.tsx
           th: ({ node: _node, className, ...props }) => (
             <th
               className={cx(
-                'border-b border-line bg-surface-1 px-3 py-2 text-left font-semibold text-fg',
+                'border-b border-r border-line bg-surface-1 px-3 py-2 text-left font-semibold text-fg last:border-r-0',
                 className,
               )}
               {...props}
@@ -419,7 +427,10 @@ export function Markdown({
           ),
           td: ({ node: _node, className, ...props }) => (
             <td
-              className={cx('border-b border-line px-3 py-2 text-fg-muted', className)}
+              className={cx(
+                'border-b border-r border-line px-3 py-2 text-fg-muted last:border-r-0',
+                className,
+              )}
               {...props}
             />
           ),
