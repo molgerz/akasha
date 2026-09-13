@@ -4,7 +4,7 @@ import { PageEditor } from '../ui/PageEditor'
 import { findCommonAncestor } from '../domain/pages'
 import { spacePeople } from '../domain/group-state'
 import { mergeThreeWay } from '../domain/merge'
-import { shortNpub, toNpub } from '../nostr/profile'
+import { displayNameOrNpub } from '../nostr/profile-store'
 import { PageFrame } from '../ui/layout/PageFrame'
 import { PageIcon } from '../ui/icons'
 import { SpaceHiddenPage } from '../ui/SpaceHiddenNotice'
@@ -87,8 +87,8 @@ export function EditorView() {
     const [mine, theirs] = page.leaves
     const ancestor = findCommonAncestor(page.revisions, mine, theirs)
     const merged = mergeThreeWay(ancestor?.content ?? '', mine.content, theirs.content, {
-      mine: `version by ${shortNpub(toNpub(mine.author))}`,
-      theirs: `version by ${shortNpub(toNpub(theirs.author))}`,
+      mine: `version by ${displayNameOrNpub(mine.author)}`,
+      theirs: `version by ${displayNameOrNpub(theirs.author)}`,
     })
     mergeContent = merged.content
     mergeParents = page.leaves.map((leaf) => leaf.id)

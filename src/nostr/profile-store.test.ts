@@ -6,7 +6,8 @@ vi.mock('./client', () => ({
 }))
 
 import { client } from './client'
-import { observeProfile } from './profile-store'
+import { cacheProfile, displayNameOrNpub, observeProfile } from './profile-store'
+import { shortNpub, toNpub } from './profile'
 
 /**
  * CON-37: flush()'s 5s timeout and an EOSE across several relays can both
@@ -50,5 +51,20 @@ describe('ProfileStore.flush', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+/**
+ * CON-33: plain-string contexts (merge notices, <option> labels) need the name
+ * with the npub only as a fallback, without going through the Author component.
+ */
+describe('displayNameOrNpub', () => {
+  it('reads the cached name and falls back to the shortened npub', () => {
+    const named = 'b'.repeat(64)
+    const unknown = 'c'.repeat(64)
+    cacheProfile(named, { displayName: 'Alice' })
+
+    expect(displayNameOrNpub(named)).toBe('Alice')
+    expect(displayNameOrNpub(unknown)).toBe(shortNpub(toNpub(unknown)))
   })
 })

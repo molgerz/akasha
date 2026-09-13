@@ -354,32 +354,30 @@ decoration layer over Markdown rather than a WYSIWYG document model, is
 
 ## How identity is displayed
 
-The dividing line is **verification, not presence**.
+**Decision (2026-09-11): the display name is primary; the npub is the
+fallback, not a companion.** Wherever authorship is shown — history entries,
+blame lines, the page byline, comments, the member list — the row carries the
+name from `kind 0`, and the shortened npub only when a key has no profile at
+all. Not both at once: repeating `npub1qz…7k4f` after every name turned a
+readable list into noise without answering the question it was put there for.
 
-Where somebody is checking who did what — **history, blame, the member list** —
-the row carries avatar + display name + shortened npub (`npub1qz…7k4f`,
-monospace). Display names are freely chosen and not unique, so a name alone
-could be somebody impersonating somebody else, and these are exactly the screens
-somebody opens to decide whether to trust a change or a member.
+The npub is still the truth, and it stays reachable rather than repeated:
 
-Everywhere else the name stands alone, because the key would be noise:
+- every author line carries its npub in the `title` tooltip;
+- a revision's **Details** view prints the full npub next to the event id;
+- `/settings/profile` shows the signed-in npub in full.
 
-- **A mention inside a sentence** (`@Alice`). `npub1qz…7k4f` mid-sentence is
-  unreadable, and a mention is not a claim about who signed anything. What is
-  *stored* is the key either way — the name is only the label, and the key is in
-  the tooltip. [13](13-editing.md)
+One deliberate exception shows the key beside the name: the
+**mention-autocomplete dropdown** lists the name **with** the shortened npub,
+because that is the moment somebody picks between two people.
+[13](13-editing.md). A mention inside a sentence is the ordinary rule on a
+smaller stage — `@Alice`, key in the tooltip — because `npub1qz…7k4f`
+mid-sentence is unreadable and a mention is not a claim about who signed
+anything.
 
-- **One's own account chip in the top bar.** Nobody has to tell themselves
-  apart from an impostor, and the bar is the narrowest strip in the layout.
-- **The byline of a page** ("last edited by …"). It says who touched the page,
-  not who signed which revision; the history is one click away and answers that.
-- **Comments.** A comment is somebody speaking, not a claim about authorship of
-  the page. Whoever wants the key hovers the name or opens the history.
-
-In both the npub stays in the tooltip and appears in full under
-`/settings/profile`. And where a key has no `kind 0` at all, the shortened npub
-is shown regardless — there is no name to fall back to, and an unattributed
-byline would be worse than a key.
+And where a key has no `kind 0` at all, the shortened npub is shown
+regardless — there is no name to fall back to, and an unattributed byline would
+be worse than a key.
 
 ## Settings
 

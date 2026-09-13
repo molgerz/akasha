@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useSpaceRoute } from './space-route'
 import { spaceAccess } from '../domain/space-access'
 import { SpaceHiddenPage } from '../ui/SpaceHiddenNotice'
-import { shortNpub, toNpub } from '../nostr/profile'
+import { toNpub } from '../nostr/profile'
 import { DiffView } from '../ui/DiffView'
-import { Author } from '../ui/Author'
+import { Author, AuthorName } from '../ui/Author'
 import { useSession } from '../session/session'
 import { publishRevision } from '../nostr/publish-page'
 import { classifyRejection } from '../nostr/client'
@@ -139,8 +139,11 @@ export function HistoryView() {
     }
   }
 
-  const option = (revision: Revision) =>
-    `${stamp(revision.createdAt)} · ${shortNpub(toNpub(revision.author))}`
+  const option = (revision: Revision) => (
+    <>
+      {stamp(revision.createdAt)} · <AuthorName pubkey={revision.author} />
+    </>
+  )
 
   return (
     <PageFrame

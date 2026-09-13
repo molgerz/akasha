@@ -38,7 +38,7 @@
 | Images/iframes used as trackers | **Accepted trade:** every image is loaded directly, whatever host it points at — so a host learns the reader's IP, which page is being read and when, and can count reads. No iframes. See "Images are loaded directly" below |
 | Forged `h` tags (an event from another group smuggled in) | Checked after loading: `h` must match the open space, otherwise the event is discarded |
 | Forgetting to verify signatures | Verification is enforced in the data layer, not optional per call |
-| Impersonation via display names | The npub is always shown alongside; the member badge only appears for entries in `39002` |
+| Impersonation via display names | The npub is the truth and stays one hover or one click away — the author tooltip, a revision's Details view, `/settings/profile`; the member badge only appears for entries in `39002` |
 | Spam in open spaces | Relay rate limits + moderated deletion (`9005`) + a "members only" UI filter |
 | Key theft through the app | No handling of nsec at all. NIP-07/NIP-46 only |
 

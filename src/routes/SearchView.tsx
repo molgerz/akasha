@@ -95,7 +95,7 @@ export function SearchView() {
                     <Highlighted text={hit.page.title} query={query} />
                   </Link>
                   <span className="shrink-0 text-xs">
-                    <Author pubkey={hit.page.head.author} showNpub={false} />
+                    <Author pubkey={hit.page.head.author} />
                   </span>
                 </div>
 

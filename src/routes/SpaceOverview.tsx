@@ -207,7 +207,7 @@ export function SpaceOverview() {
                       {page.revisions.length} rev{page.revisions.length === 1 ? '' : 's'}
                     </span>
                     <span className="hidden w-44 shrink-0 justify-end text-xs sm:flex">
-                      <Author pubkey={page.head.author} showNpub={false} />
+                      <Author pubkey={page.head.author} />
                     </span>
                   </Link>
                 </li>

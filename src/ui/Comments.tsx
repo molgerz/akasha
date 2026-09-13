@@ -153,7 +153,7 @@ export function Comments({ relayUrl, groupId, slug, comments, isAdmin = false }:
           stacking two. */}
       <div className="border-t border-line bg-surface-1 px-4 py-3.5">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Author pubkey={node.author} avatar showNpub={false} />
+          <Author pubkey={node.author} avatar />
           <span className="text-fg-subtle">{timeLabel(node.createdAt)}</span>
         </div>
         <div className="mt-1.5">
@@ -220,7 +220,7 @@ export function Comments({ relayUrl, groupId, slug, comments, isAdmin = false }:
               {replyTo ? (
                 <div className="flex items-center gap-2 text-xs text-fg-subtle">
                   <span className="inline-flex items-center gap-1.5">
-                    Replying to <Author pubkey={replyTo.author} showNpub={false} />
+                    Replying to <Author pubkey={replyTo.author} />
                   </span>
                   <Button size="sm" variant="subtle" onClick={() => setReplyTo(null)}>
                     cancel
