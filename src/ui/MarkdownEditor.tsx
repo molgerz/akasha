@@ -244,10 +244,15 @@ function editorTheme(dark: boolean) {
         padding: '0.5rem 0.75rem',
         fontSize: '14px',
         lineHeight: '1.5',
+        // A rule under every row and between every column: the grid reads as a
+        // grid, which is what makes an empty cell a place rather than a gap.
+        // The last column has none, so the card's own border is not doubled.
         borderBottom: '1px solid var(--line)',
+        borderRight: '1px solid var(--line)',
         color: 'var(--fg-muted)',
         overflowWrap: 'anywhere',
       },
+      '.cm-md-table-cell-last': { borderRight: 'none' },
       '.cm-md-table-head .cm-md-table-cell': {
         backgroundColor: 'var(--surface-1)',
         color: 'var(--fg)',
@@ -259,6 +264,11 @@ function editorTheme(dark: boolean) {
       '.cm-md-table-head .cm-md-table-cell-last': { borderTopRightRadius: '8px' },
       '.cm-md-table-row:last-child .cm-md-table-cell-first': { borderBottomLeftRadius: '8px' },
       '.cm-md-table-row:last-child .cm-md-table-cell-last': { borderBottomRightRadius: '8px' },
+      // A cell with nothing in it has no line box, so it would come out a whole
+      // line shorter than the row above it — and it would only grow once
+      // somebody typed into it. One line's height is the floor, not the
+      // ceiling: the cell still grows with whatever is written in it.
+      '.cm-md-table-text': { minHeight: '1.5em' },
       // A cell's editing surface: exactly over its text, transparent so the text
       // shows through, and focusable — which a hidden element would not be, and
       // Tab has to reach it. Only the caret makes it visible; `focus-within`

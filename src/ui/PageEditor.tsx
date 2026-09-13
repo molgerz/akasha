@@ -173,9 +173,13 @@ export function PageEditor({
           setUploadNote(`${file.name}: ${result.reason}`)
           return
         }
+        // No newline in front: the file picker opens from `/image` at the start
+        // of its line, so the attachment belongs on that line — a leading one
+        // only left a blank line behind. The trailing one opens the line the
+        // writing carries on from.
         const snippet = attachmentMarkdown(result, file.name)
-        if (editorHandle.current) editorHandle.current.insert(`\n${snippet}\n`)
-        else setContent((current) => `${current}\n${snippet}\n`)
+        if (editorHandle.current) editorHandle.current.insert(`${snippet}\n`)
+        else setContent((current) => `${current}${snippet}\n`)
         setUploadNote(`${file.name} uploaded (${Math.round(result.size / 1024)} kB)`)
       }
     } catch (err) {

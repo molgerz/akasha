@@ -14,7 +14,8 @@ import { mentionChip, releaseMention } from './mention-chip'
  * pipes only line up if every row is laid out against all the others, and the
  * `---` line is a second copy of the column count. So it never falls back to
  * its source: the grid *is* the editor. A cell is clicked and typed into, Tab
- * walks the cells, and the click brings out the handles Confluence has: one on
+ * walks the cells and hangs one more row on the bottom when it leaves the last
+ * one, and the click brings out the handles Confluence has: one on
  * the table's left edge level with the cell's row, one on its top edge above
  * the cell's column. Each opens the operations for its axis — in and out,
  * delete, alignment — and a right-click on a cell opens the whole set at once.
@@ -48,6 +49,13 @@ export type Cell = {
   /** the cell's Markdown, exactly as the document has it */
   source: string
   pieces: Piece[]
+  /**
+   * The space between the cell's pipes, for a cell the parser gave no node to
+   * — an empty one. Its content range is empty and the whitespace around it
+   * belongs to nobody, so writing into it replaces the whole slot and the line
+   * comes out `| x |` rather than `|x  |`. See rowCells.
+   */
+  slot?: { from: number; to: number }
 }
 
 export type TableData = {
@@ -138,11 +146,55 @@ function cellOf(node: SyntaxNode, doc: Text): Cell {
   }
 }
 
+/**
+ * A row's cells, in column order — including the ones with nothing in them.
+ *
+ * Those are the reason this is not a plain walk over `TableCell` nodes: the
+ * parser emits a cell only when there is something in it, so an empty one is
+ * nothing but the two pipes around it. Skipping it would drop a column out of
+ * that row — the header would have two and the row under it one — and the
+ * skeleton `/table` writes (`|  |  |`) would come out with no editable cells
+ * at all. So the cells are located by the pipes, and an empty slot between two
+ * of them becomes a cell with an empty range at the slot's start.
+ */
 function rowCells(row: SyntaxNode, doc: Text): Cell[] {
-  const cells: Cell[] = []
-  for (let child = row.firstChild; child; child = child.nextSibling) {
-    if (child.name === 'TableCell') cells.push(cellOf(child, doc))
+  const children: SyntaxNode[] = []
+  for (let child = row.firstChild; child; child = child.nextSibling) children.push(child)
+
+  // The slots between the pipes; the first and the last only hold a cell when
+  // the row has no leading or trailing pipe to open and close it.
+  const pipes = children.filter((child) => child.name === 'TableDelimiter')
+  const slots: [number, number][] = []
+  let start = row.from
+  for (const pipe of pipes) {
+    slots.push([start, pipe.from])
+    start = pipe.to
   }
+  slots.push([start, row.to])
+
+  const cells: Cell[] = []
+  slots.forEach(([from, to], index) => {
+    const cell = children.find(
+      (child) => child.name === 'TableCell' && child.from >= from && child.to <= to,
+    )
+    if (cell) {
+      cells.push(cellOf(cell, doc))
+      return
+    }
+    // Only a slot *between* two pipes is a cell of its own; text outside them
+    // belongs to no column.
+    if (pipes.length === 0 || index === 0 || index >= slots.length - 1) return
+    const raw = doc.sliceString(from, to)
+    const text = raw.trim()
+    const content = from + (raw.length - raw.trimStart().length)
+    cells.push({
+      from: content,
+      to: text ? to - (raw.length - raw.trimEnd().length) : content,
+      source: text,
+      pieces: [],
+      slot: { from, to },
+    })
+  })
   return cells
 }
 
@@ -222,6 +274,61 @@ function serialize(text: TableText): string {
 /** The menu's document listeners, per table — see TableWidget.destroy. */
 const menuCleanup = new WeakMap<HTMLElement, () => void>()
 
+/**
+ * What the next look at a table should do with the caret.
+ *
+ * A row or column the menu has just added — or the one Tab grew — does not
+ * exist in the grid the edit was made from, so the cell to land in is named
+ * here and picked up by the widget built from the *new* document. `null` says
+ * the opposite: leave the caret alone. That is what an edit inside a cell
+ * means — the widget is redrawn, the caret belongs to the widget (a cell input
+ * holds the focus, and the text cursor has not moved), and without it the
+ * redraw would pull the caret back to the first cell while Tab walks away.
+ * Nothing at all is the `/table` case: the caret came in from the document,
+ * and the cell it stands in has to be picked up.
+ *
+ * Matching on the table's start keeps it to that one table, and the entry is
+ * consumed as soon as it is used, so a later redraw cannot act on it twice.
+ */
+let caret: { table: number; cell: string | null } | null = null
+
+/**
+ * The cell a blur is handing the focus to, as "row-column" for the DOM — or
+ * `null` when the focus is going anywhere else, the document included.
+ *
+ * Read *before* the redraw the blur is about to cause: the event carries the
+ * element that is receiving the focus, and a click on another cell only works
+ * out because that element still knows which cell it was.
+ */
+function nextCell(root: HTMLElement, to: EventTarget | null): string | null {
+  const box = to instanceof Element ? to.closest<HTMLElement>('[data-cell]') : null
+  return box && root.contains(box) ? box.dataset.cell ?? null : null
+}
+
+/**
+ * Whether a focus target is a cell of a table — the caret staying inside the
+ * grid rather than going back to the document.
+ */
+function isCell(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-cell]') !== null
+}
+
+/**
+ * The attribute on an editor's DOM that says a cell input holds the focus.
+ *
+ * Only then may a table reach for the caret. A focused cell input means an edit
+ * is going on somewhere: every table in the document is redrawn for it, and a
+ * table that opened a cell of its own from that redraw would pull the caret out
+ * of the cell being typed in.
+ *
+ * Written from the focus events and not read off `document.activeElement` while
+ * a table is drawn, because by then the redraw may have removed the input that
+ * had the focus; a detached element reads as "the document has it", which is
+ * exactly the wrong answer. It hangs on the editor's own DOM so that it belongs
+ * to one editor and cannot outlive it.
+ */
+const EDITING = 'tableEditing'
+
 /** Which cell of the table a cell object is, as "row-column" for the DOM. */
 function cellIndex(table: TableData, cell: Cell): string {
   for (const [index, entry] of table.head.entries()) {
@@ -288,6 +395,9 @@ export class TableWidget extends WidgetType {
   toDOM(view: EditorView) {
     const root = document.createElement('div')
     root.className = 'cm-md-table'
+    // Where the table stands, so a later redraw can be told from another one —
+    // focusCell, and no other key of the DOM.
+    root.dataset.table = String(this.table.from)
     root.appendChild(this.row(view, root, this.table.head, 0, true))
     this.table.rows.forEach((cells, index) => {
       root.appendChild(this.row(view, root, cells, index + 1, false))
@@ -308,6 +418,7 @@ export class TableWidget extends WidgetType {
     root.addEventListener('focusin', (event) => {
       const box = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-cell]')
       if (!box?.dataset.cell) return
+      view.dom.dataset[EDITING] = '1'
       const [row, column] = box.dataset.cell.split('-').map(Number)
       highlight(row, column)
     })
@@ -325,28 +436,40 @@ export class TableWidget extends WidgetType {
       this.openMenu(view, root, row, column, 'cell', event)
     })
 
-    // `/table` leaves the cursor in the first header cell, and that cell is not
-    // reachable as text any more — so the caret goes into it. Without this the
-    // next keystroke would land in Markdown nobody can see.
-    const head = view.state.selection.main.head
-    if (head >= this.table.from && head <= this.table.to) {
-      const cell = [...this.table.head, ...this.table.rows.flat()].find(
-        (entry) => head >= entry.from && head <= entry.to,
-      )
+    // Where the caret goes — see `caret`. An edit inside the table (a named
+    // `null`) hands the widget nothing to do: Tab and Enter have already
+    // worked out the next cell and are about to focus it themselves.
+    const asked = caret && caret.table === this.table.from ? caret : null
+    if (asked) caret = null
+    if (asked?.cell) {
+      const target = asked.cell
       queueMicrotask(() => {
         if (!root.isConnected) return
-        const target = cell
-          ? root.querySelector<HTMLInputElement>(
-              '[data-cell="' + cellIndex(this.table, cell) + '"] .cm-md-table-input',
-            )
-          : null
-        const input = target ?? root.querySelector<HTMLInputElement>('.cm-md-table-input')
-        input?.focus()
-        // The skeleton's first cell holds a placeholder word, and the entry
-        // meant it to be typed over rather than typed after.
-        // src/ui/editor-slash.ts, the table command's `select`
-        input?.select()
+        root
+          .querySelector<HTMLInputElement>('[data-cell="' + target + '"] .cm-md-table-input')
+          ?.focus()
       })
+    } else if (!asked && view.dom.dataset[EDITING] !== '1') {
+      // `/table` leaves the cursor in a header cell that is not reachable as
+      // text any more, so the cell the cursor stands in is the one to open.
+      const head = view.state.selection.main.head
+      const under = [...this.table.head, ...this.table.rows.flat()].find(
+        (entry) => head >= entry.from && head <= entry.to,
+      )
+      if (under || (head >= this.table.from && head <= this.table.to)) {
+        const target = under ? cellIndex(this.table, under) : null
+        queueMicrotask(() => {
+          if (!root.isConnected) return
+          const input = target
+            ? root.querySelector<HTMLInputElement>('[data-cell="' + target + '"] .cm-md-table-input')
+            : root.querySelector<HTMLInputElement>('.cm-md-table-input')
+          input?.focus()
+          // The skeleton's first cell holds a placeholder word, and the entry
+          // meant it to be typed over rather than typed after.
+          // src/ui/editor-slash.ts, the table command's `select`
+          input?.select()
+        })
+      }
     }
 
     return root
@@ -405,7 +528,12 @@ export class TableWidget extends WidgetType {
       input.value = unescapeCell(cell.source)
       input.setAttribute('aria-label', 'Row ' + (row + 1) + ', column ' + (column + 1))
       input.addEventListener('keydown', (event) => this.key(view, input, cell, row, column, event))
-      input.addEventListener('blur', () => this.commit(view, input, cell))
+      input.addEventListener('blur', (event) => {
+        // Moving to another cell keeps the caret in the grid; anywhere else
+        // hands it back to the document, which may then open a cell again.
+        if (!isCell(event.relatedTarget)) delete view.dom.dataset[EDITING]
+        this.commit(view, input, cell, { root, to: event.relatedTarget })
+      })
       box.appendChild(input)
 
       // The column's handle lives in its own header cell: it is then above the
@@ -450,14 +578,45 @@ export class TableWidget extends WidgetType {
    * edit moved the cell — writing at a stale offset would corrupt a line that
    * has nothing to do with this table.
    */
-  private commit(view: EditorView, input: HTMLInputElement, cell: Cell) {
+  private commit(
+    view: EditorView,
+    input: HTMLInputElement,
+    cell: Cell,
+    /**
+     * Where the focus is going, for a blur. Clicking another cell has already
+     * chosen one, and the redraw the write causes would otherwise pull the caret
+     * back to the first cell of the table.
+     */
+    blur?: { root: HTMLElement; to: EventTarget | null },
+  ) {
+    const change = this.cellChange(view, input, cell)
+    if (!change) return
+    // Everything else leaves the caret where it is: the text cursor has not
+    // moved, and Tab or Enter has the next cell in hand already.
+    caret = { table: this.table.from, cell: blur ? nextCell(blur.root, blur.to) : null }
+    view.dispatch({ changes: change, userEvent: 'input' })
+  }
+
+  /**
+   * The change an input asks for, or `null` when there is nothing to write.
+   *
+   * Shared by the caret leaving a cell and by Tab growing the table, which puts
+   * both into one transaction. An empty cell — one the parser gave no node to —
+   * writes over its whole slot, so the text lands the way a structural edit
+   * would put it there: `| x |`, not `|x  |`. See rowCells.
+   */
+  private cellChange(
+    view: EditorView,
+    input: HTMLInputElement,
+    cell: Cell,
+  ): { from: number; to: number; insert: string } | null {
     const source = escapeCell(input.value)
-    if (source === cell.source) return
-    if (view.state.doc.sliceString(cell.from, cell.to) !== cell.source) return
-    view.dispatch({
-      changes: { from: cell.from, to: cell.to, insert: source },
-      userEvent: 'input',
-    })
+    if (source === cell.source) return null
+    if (view.state.doc.sliceString(cell.from, cell.to) !== cell.source) return null
+    if (cell.slot && source) {
+      return { from: cell.slot.from, to: cell.slot.to, insert: ' ' + source + ' ' }
+    }
+    return { from: cell.from, to: cell.to, insert: source }
   }
 
   private key(
@@ -482,19 +641,59 @@ export class TableWidget extends WidgetType {
     }
     if (event.key !== 'Tab') return
     event.preventDefault()
-    this.commit(view, input, cell)
     const columns = Math.max(this.table.head.length, 1)
     const flat = row * columns + column + (event.shiftKey ? -1 : 1)
     if (flat < 0) {
+      this.commit(view, input, cell)
       input.blur()
       return
     }
+    // Tab out of the last cell grows the table instead of leaving it: one more
+    // row at the bottom, with the caret in its first cell. That is where the
+    // writing continues, and it saves the trip to the row handle for the case
+    // it is needed most.
+    if (flat >= (this.table.rows.length + 1) * columns) {
+      this.appendRow(view, input, cell, row + 1)
+      return
+    }
+    this.commit(view, input, cell)
     if (!this.focusCell(view, Math.floor(flat / columns), flat % columns)) input.blur()
   }
 
-  /** Put the caret into a cell of the table as it stands *now* — after an edit. */
+  /**
+   * One more row at the bottom, and the caret in its first cell.
+   *
+   * The cell being left and the new row go into **one** transaction. Two would
+   * mean the second working from offsets the first may have moved: a cell whose
+   * text grew would push the end of the table out from under the append.
+   */
+  private appendRow(view: EditorView, input: HTMLInputElement, cell: Cell, newRow: number) {
+    const changes: { from: number; to: number; insert: string }[] = []
+    const change = this.cellChange(view, input, cell)
+    if (change) changes.push(change)
+    const line = '| ' + this.table.head.map(() => '').join(' | ') + ' |'
+    changes.push({ from: this.table.to, to: this.table.to, insert: '\n' + line })
+    // The new row's first cell is where the caret belongs, and the grid that has
+    // it is the one drawn from the document this transaction is about to make.
+    caret = { table: this.table.from, cell: newRow + '-0' }
+    view.dispatch({ changes, userEvent: 'input' })
+  }
+
+  /**
+   * Put the caret into a cell of *this* table as it stands **now** — after an
+   * edit.
+   *
+   * Found through the editor rather than through the widget that started this,
+   * because a write redraws the table and the DOM the key came from is gone. The
+   * table is picked out by where it stands in the document, which a cell edit
+   * does not move: `data-cell` alone would not do, since it counts from the top
+   * of each table and a page can hold more than one.
+   */
   private focusCell(view: EditorView, row: number, column: number): boolean {
-    const input = view.contentDOM.querySelector<HTMLInputElement>(
+    const table = view.contentDOM.querySelector<HTMLElement>(
+      '.cm-md-table[data-table="' + this.table.from + '"]',
+    )
+    const input = table?.querySelector<HTMLInputElement>(
       '[data-cell="' + row + '-' + column + '"] .cm-md-table-input',
     )
     if (!input) return false
@@ -583,39 +782,54 @@ export class TableWidget extends WidgetType {
     const entry = this.edit.bind(this, view)
     const empty = () => this.table.head.map(() => '')
 
+    // What a new row or column hands the caret to: the leftmost cell of the new
+    // row, the topmost cell of the new column, in the numbering the new document
+    // will have.
+    const thenFocus = (targetRow: number, targetColumn: number) => {
+      caret = { table: this.table.from, cell: targetRow + '-' + targetColumn }
+    }
+
     const insertRowAbove = {
       label: 'Insert row above',
       disabled: row === 0,
-      run: () =>
+      run: () => {
+        thenFocus(row, 0)
         entry((text) => {
           text.rows.splice(body, 0, empty())
-        }),
+        })
+      },
     }
     const insertRowBelow = {
       label: 'Insert row below',
-      run: () =>
+      run: () => {
+        thenFocus(row === 0 ? 1 : row + 1, 0)
         entry((text) => {
           text.rows.splice(row === 0 ? 0 : body + 1, 0, empty())
-        }),
+        })
+      },
     }
     const insertColumnLeft = {
       label: 'Insert column left',
-      run: () =>
+      run: () => {
+        thenFocus(0, column)
         entry((text) => {
           text.head.splice(column, 0, '')
           for (const cells of text.rows) cells.splice(column, 0, '')
           text.align.splice(column, 0, null)
-        }),
+        })
+      },
     }
     const insertColumnRight = {
       label: 'Insert column right',
-      run: () =>
+      run: () => {
+        thenFocus(0, column + 1)
         entry((text) => {
           const at = column + 1
           text.head.splice(at, 0, '')
           for (const cells of text.rows) cells.splice(at, 0, '')
           text.align.splice(at, 0, null)
-        }),
+        })
+      },
     }
     const deleteRow = {
       label: 'Delete row',

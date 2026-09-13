@@ -39,6 +39,14 @@ export type SlashCommand = {
   select?: number
   /** runs instead of inserting text — the attachment opens the file picker */
   attach?: boolean
+  /**
+   * needs a blank line above it when the line before is not blank. Only `---`
+   * does: under a paragraph it is a Setext heading to every client that does not
+   * turn that off the way this app does. A table, a fence and a quote all take a
+   * paragraph in their stride — checked against GFM's reference parser, which is
+   * what the page renders with. src/ui/editor-slash.ts, docs/13-editing.md
+   */
+  blankBefore?: boolean
 }
 
 /**
@@ -47,13 +55,13 @@ export type SlashCommand = {
  * extend — the skeleton is there to be typed *into*. Exported so the table-help
  * work (the ticket's blocker) reuses the one shape instead of copying it.
  *
- * The leading blank line is deliberate. A table typed directly under a
- * paragraph needs it, and `---` under a paragraph is a Setext heading in
- * CommonMark — this app turns Setext off (`src/ui/markdown-flavour.ts`), but
- * the stored text still goes to foreign clients, so the menu writes text that
- * is a table everywhere.
+ * No blank line above it: the `/` stands at the start of its line, so the table
+ * already has one of its own, and a table under a paragraph is a table to GFM's
+ * own reference parser — which is what the page renders with and what every
+ * other client follows. An unconditional leading newline only pushed the table
+ * down and left blank lines behind it.
  */
-export const TABLE_SKELETON = '\n\n| Column | Value |\n| --- | --- |\n|  |  |\n|  |  |'
+export const TABLE_SKELETON = '| Column | Value |\n| --- | --- |\n|  |  |\n|  |  |'
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
@@ -78,25 +86,28 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     displayLabel: 'Code block',
     detail: 'Fenced, with a language line',
     aliases: ['codeblock', 'fence'],
-    insert: '\n\n```\n\n```\n',
+    insert: '```\n\n```\n',
     // the empty info string after the opening fence, ready for a language
-    cursor: 5,
+    cursor: 3,
   },
   {
     label: 'quote',
     displayLabel: 'Quote',
     detail: 'A blockquote',
     aliases: ['blockquote'],
-    insert: '\n> ',
-    cursor: 3,
+    insert: '> ',
+    cursor: 2,
   },
   {
     label: 'divider',
     displayLabel: 'Divider',
     detail: 'A horizontal rule',
     aliases: ['rule', 'hr'],
-    insert: '\n---\n',
-    cursor: 4,
+    insert: '---\n',
+    cursor: 3,
+    // `text` over `---` is a Setext heading everywhere Setext is not turned
+    // off, so this one does need the blank line to break the paragraph above.
+    blankBefore: true,
   },
 ]
 
@@ -130,11 +141,21 @@ function applyCommand(
     return
   }
 
+  // The command stands at the start of its line, so the block already has a
+  // line of its own — see `blankBefore` for the one entry that needs more.
+  const line = view.state.doc.lineAt(from)
+  const above = line.number > 1 ? view.state.doc.line(line.number - 1).text : ''
+  const lead = command.blankBefore && above.trim().length > 0 ? '\n' : ''
+  const insert = lead + command.insert
+
   view.dispatch({
-    changes: { from, to, insert: command.insert },
+    changes: { from, to, insert },
     selection: command.select
-      ? EditorSelection.range(from + command.cursor, from + command.cursor + command.select)
-      : EditorSelection.cursor(from + command.cursor),
+      ? EditorSelection.range(
+          from + lead.length + command.cursor,
+          from + lead.length + command.cursor + command.select,
+        )
+      : EditorSelection.cursor(from + lead.length + command.cursor),
     scrollIntoView: true,
     userEvent: 'input.complete',
   })

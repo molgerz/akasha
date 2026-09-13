@@ -49,6 +49,12 @@ describe('Markdown', () => {
     expect(page.textContent).not.toContain(NPUB)
   })
 
+  it('marks its tables so that an empty cell still gets a line box', () => {
+    const page = render('| a | b |\n| --- | --- |\n|  |  |')
+    // src/index.css is what gives the line box: a cell with nothing in it has
+    // none, so an empty row would come out a line shorter than the header.
+    expect(page.querySelector('table')?.classList.contains('page-table')).toBe(true)
+  })
   it('draws an image at the width the editor wrote into its URL', () => {
     const page = render('![logo](https://example.com/logo.svg#width=320)')
     // What is made smaller in the editor is smaller on the page; `max-w-full`

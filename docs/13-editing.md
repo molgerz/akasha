@@ -184,7 +184,10 @@ markers, ready for the word.
 A divider needs no blank line above it here. In CommonMark `---` directly under
 a line of text is not a divider at all but a Setext H2 for the line above — the
 trap this app closes by not recognising Setext headings. See
-`src/ui/markdown-flavour.ts`.
+`src/ui/markdown-flavour.ts`. The `/divider` entry writes the blank line anyway
+when the line above is text, because the stored text goes to clients that do
+recognise Setext; the other entries need none — GFM's own reference parser, which
+the page renders with, takes a table directly under a paragraph as a table.
 
 Code inside a fence is coloured, but by a small style bound to the theme tokens
 (`codeHighlight` in `src/ui/MarkdownEditor.tsx`), not by CodeMirror's default
@@ -195,11 +198,13 @@ be a second answer to a question the decorations have already answered.
 
 | Type | Result |
 |---|---|
-| `| a | b |` with a `---` line under it | The grid itself — a header band, one rule under each row, the alignment the delimiter row asks for with `---`, `:---`, `---:` or `:---:` — every cell edited in place, with a handle on the row's left edge and on the column's top edge |
+| `| a | b |` with a `---` line under it | The grid itself — a header band, a rule under every row *and* between every column, the alignment the delimiter row asks for with `---`, `:---`, `---:` or `:---:` — every cell edited in place, with a handle on the row's left edge and on the column's top edge |
 | `![alt](url)` | The picture, from wherever it points. Clicking it selects it and shows a handle; dragging the handle sets its width |
 
 **A table never becomes text again.** A cell is clicked and typed into, Tab and
-Shift-Tab walk the cells, Enter goes down a row, and Escape puts the cell back.
+Shift-Tab walk the cells — and Tab in the last one hangs another row on the
+bottom with the caret in its first cell, which is where the writing continues;
+Enter goes down a row, and Escape puts the cell back.
 Clicking one brings out the two handles Confluence has: a chevron on the table's
 left edge, level with that cell's row, and one on the top edge above that cell's
 column. The left one opens the row's operations — insert above, insert below,
@@ -208,7 +213,10 @@ That is Confluence's vocabulary exactly, and it is what the handles are for: one
 click already says *which* row or column is meant, so the menu never has to ask.
 The header row offers no "row above" and cannot be deleted, because GFM has no
 row above it. A right-click on a cell still opens the whole set at once, in the
-same order, for anyone who reaches for it. `src/ui/editor-table.ts`
+same order, for anyone who reaches for it. An insert then hands the caret to the
+cell it made — the leftmost of the new row, the topmost of the new column — so
+the next keystroke lands where the row or column just appeared instead of back
+at the top left of the table. `src/ui/editor-table.ts`
 
 Under all of it the document stays a plain Markdown table. A cell is written
 back when the caret *leaves* it, not on every keystroke: one edit is one undo
@@ -216,6 +224,21 @@ step, and nothing is reformatted that nobody touched. The structural operations
 do rewrite the table — a column cannot be inserted any other way — and then the
 pipes come out canonical (`| a | b |`, one space on each side, alignment
 preserved from the delimiter row).
+
+**A cell with nothing in it is still a cell.** The parser draws a cell only when
+there is something in it: `|  |  |` is nothing but pipes. So the grid is read off
+the *pipes* rather than off the cell nodes — otherwise a row of empty cells would
+lose its columns (a header of two and a row of one under it), and the skeleton
+`/table` writes would arrive with no cell to type into at all. Writing into one
+replaces the whole space between its pipes, so the line comes out `| x |` and not
+`|x  |`, the shape a structural edit writes as well. `src/ui/editor-table.ts`
+
+**Every row is at least one line tall.** A cell with nothing in it has no line
+box, so a new row would come out a whole line shorter than the header above it —
+and would only grow the moment somebody typed into it. Both sides give it one
+line from the start: the editor puts a `min-height` on the text inside a cell,
+the page a zero-width space after it, because `min-height` does not apply to a
+table cell at all. `src/index.css`, `src/ui/MarkdownEditor.tsx`
 
 **A cell is not a fragment of a rich-text document.** While the caret is in one
 it shows its own text, the way the active line shows its markup; every other
@@ -225,6 +248,24 @@ over the cell's text: a click gives it the caret, and `:focus-within` swaps the
 two, so there is no class to toggle from JS. It needs no `contenteditable`, and
 the editor ignores every event inside a widget (`eventBelongsToEditor`), so
 none of it reaches CodeMirror's own input handling.
+
+Writing a cell redraws the whole table, and that redraw leaves the caret alone
+on purpose: the focus is in a cell input and Tab already has the next cell in
+hand. A widget that reached for the caret on every redraw would pull it back to
+the first cell the moment a cell was written — and a click into another cell,
+which blurs one and writes it, would land back at the top left as well. It only
+reaches for the caret when the caret comes *into* the table from the document,
+when the operation names the cell it just made, or when a blur says where the
+focus is going: the event carries the element that is receiving it, which is how
+the clicked cell survives the redraw. Every such lookup names its table by where
+it stands in the document — `data-cell` counts from the top of each table, and a
+page can hold more than one, so without that Tab walks the wrong grid. The same
+goes for *taking* the caret: an edit in one table redraws every table on the
+page, so a table only reaches for the caret while no cell input holds the focus.
+That is a mark on the editor's own DOM, not a reading of
+`document.activeElement` — by the time a later table is drawn, the input that had
+the focus may already have been removed, and a removed element reads as "the
+document has it", which is the wrong answer.
 
 **An image keeps its Markdown to itself.** `![alt](url)` never appears on
 screen: the picture is the picture, under the caret too, and it is atomic — the
@@ -311,12 +352,15 @@ theme and one keyboard model, not a menu of its own.
 
 It exists for the one piece of Markdown that is genuinely hard to type by hand:
 the **pipe table**. The entry writes a 3×2 skeleton — a header and two body rows,
-because one row is a table to extend before it can be typed into — with a blank
-line above it, and puts the cursor in the first header cell, so the next
-keystrokes are cell contents; the rendered page then treats it like any other GFM table
-(`src/ui/editor-slash.ts` exports the skeleton as `TABLE_SKELETON`). The other
-entries insert their block and leave the cursor where the writing continues —
-the code entry lands on the fence's language line, the divider after the rule.
+because one row is a table to extend before it can be typed into — and puts the
+cursor in the first header cell, so the next keystrokes are cell contents; the
+rendered page then treats it like any other GFM table (`src/ui/editor-slash.ts`
+exports the skeleton as `TABLE_SKELETON`). **The block lands on the line the
+slash stands on**, because the slash is the first character of its line: every
+entry writes its block where the command was typed and no blank line in front of
+it. Only the divider asks for one, and only when the line above is text. The
+other entries leave the cursor where the writing continues — the code entry lands
+on the fence's language line, the divider after the rule.
 
 `/` only opens where the slash is the **first character of its line**. `@`
 stays out of e-mails and `:` out of `https://` for the same reason: a dropdown

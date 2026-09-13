@@ -126,7 +126,7 @@ describe('what a / entry writes', () => {
     expect(text).toBe(TABLE_SKELETON)
     // a header and *two* body rows — one row would be a table to extend before
     // it could be typed into
-    expect(TABLE_SKELETON.split('\n').slice(2)).toEqual([
+    expect(TABLE_SKELETON.split('\n')).toEqual([
       '| Column | Value |',
       '| --- | --- |',
       '|  |  |',
@@ -138,28 +138,37 @@ describe('what a / entry writes', () => {
     expect(from).toBe(TABLE_SKELETON.indexOf('Column'))
   })
 
-  it('writes the table where the slash was, keeping the text above it', () => {
-    // the slash sat on its own line, so the newline that opened that line
-    // stays; the skeleton's own blank line follows it
+  it('writes the table where the slash was, on the line it stood on', () => {
+    // The slash is the first character of its line, so the table already has a
+    // line of its own: a blank line before it would only push it down and leave
+    // the empty line behind. A table under a paragraph is a table to GFM.
     expect(apply('hello\n/ta', 'table').text).toBe('hello\n' + TABLE_SKELETON)
   })
 
   it('writes a fenced pair with the cursor on the language line', () => {
     const { text, from } = apply('/', 'code')
-    expect(text).toBe('\n\n```\n\n```\n')
-    expect(text.slice(0, from)).toBe('\n\n```')
+    expect(text).toBe('```\n\n```\n')
+    expect(text.slice(0, from)).toBe('```')
   })
 
   it('writes a quote marker and puts the cursor after it', () => {
     const { text, from } = apply('/', 'quote')
-    expect(text).toBe('\n> ')
-    expect(from).toBe(3)
+    expect(text).toBe('> ')
+    expect(from).toBe(2)
   })
 
   it('writes a divider and puts the cursor at the end of its line', () => {
     const { text, from } = apply('/', 'divider')
-    expect(text).toBe('\n---\n')
-    expect(from).toBe(4)
+    expect(text).toBe('---\n')
+    expect(from).toBe(3)
+  })
+
+  it('gives the divider a blank line above only when a paragraph is there', () => {
+    // `text` over `---` is a Setext heading to every client that does not turn
+    // that off the way this app does — the one block that needs the blank line.
+    expect(apply('hello\n/di', 'divider').text).toBe('hello\n\n---\n')
+    // with a blank line already there, one is enough
+    expect(apply('hello\n\n/di', 'divider').text).toBe('hello\n\n---\n')
   })
 
   it('inserts nothing for the attachment entry and calls the picker', () => {

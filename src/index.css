@@ -135,6 +135,17 @@
   color: var(--shiki-dark);
 }
 
+/* A cell with nothing in it has no line box, so an empty row comes out a whole
+   line shorter than the header above it and only grows once something is
+   written in it. A zero-width space gives every cell one without showing
+   anything; `min-height` cannot do it, because it does not apply to table
+   cells. The editor does the same for its own cells, with a `min-height` on the
+   text inside them — src/ui/MarkdownEditor.tsx, docs/13-editing.md */
+.page-table td::after,
+.page-table th::after {
+  content: '\200b';
+}
+
 html,
 body,
 #root {

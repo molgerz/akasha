@@ -30,6 +30,9 @@ vi.mock('../nostr/profile-store', () => ({
  */
 const TABLE = '| Name | Value |\n| --- | ---: |\n| a | 1 |'
 
+/** Two tables, so a key that is only unique inside one can be caught. */
+const TWO_TABLES = TABLE + '\n\nA paragraph between them.\n\n' + TABLE
+
 function mount(doc: string) {
   const parent = document.createElement('div')
   document.body.appendChild(parent)
@@ -44,6 +47,21 @@ function mount(doc: string) {
 
 function cell(view: EditorView, row: number, column: number): HTMLInputElement {
   const input = view.contentDOM.querySelector<HTMLInputElement>(
+    '[data-cell="' + row + '-' + column + '"] .cm-md-table-input',
+  )
+  if (!input) throw new Error('no cell ' + row + '-' + column)
+  return input
+}
+
+/** A table on the page, by position — a document can hold more than one. */
+function tableAt(view: EditorView, index: number): HTMLElement {
+  const table = view.contentDOM.querySelectorAll<HTMLElement>('.cm-md-table')[index]
+  if (!table) throw new Error('no table ' + index)
+  return table
+}
+
+function cellIn(table: HTMLElement, row: number, column: number): HTMLInputElement {
+  const input = table.querySelector<HTMLInputElement>(
     '[data-cell="' + row + '-' + column + '"] .cm-md-table-input',
   )
   if (!input) throw new Error('no cell ' + row + '-' + column)
@@ -110,6 +128,31 @@ describe('the table in the editor', () => {
     view.destroy()
   })
 
+  it('draws a cell with nothing in it, which the parser leaves as two pipes', () => {
+    // `| a |  | c |`: the middle cell has no TableCell node of its own at all
+    const view = mount('| a |  | c |\n| --- | --- | --- |\n| d |  | f |')
+    const rows = view.contentDOM.querySelectorAll('.cm-md-table-row')
+    expect(rows[0].querySelectorAll('.cm-md-table-cell')).toHaveLength(3)
+    expect(rows[1].querySelectorAll('.cm-md-table-cell')).toHaveLength(3)
+    expect(cell(view, 1, 1).value).toBe('')
+    view.destroy()
+  })
+
+  it('draws the skeleton /table writes as a header and two whole rows', () => {
+    const view = mount(TABLE_SKELETON.trim())
+    const rows = view.contentDOM.querySelectorAll('.cm-md-table-row')
+    expect(rows).toHaveLength(3)
+    for (const row of rows) expect(row.querySelectorAll('.cm-md-table-cell')).toHaveLength(2)
+    view.destroy()
+  })
+
+  it('writes into a cell that was empty the shape a structural edit writes', () => {
+    const view = mount('| a |  | c |\n| --- | --- | --- |\n| d |  | f |')
+    type(cell(view, 1, 1), 'e')
+    expect(view.state.doc.toString()).toBe('| a |  | c |\n| --- | --- | --- |\n| d | e | f |')
+    view.destroy()
+  })
+
   it('labels every cell for whoever cannot see the grid', () => {
     const view = mount(TABLE)
     expect(cell(view, 0, 1).getAttribute('aria-label')).toBe('Row 1, column 2')
@@ -160,20 +203,87 @@ describe('the table in the editor', () => {
     view.destroy()
   })
 
-  it('walks the cells with Tab, writing each one on the way', () => {
+  it('walks the cells with Tab, writing each one on the way', async () => {
     const view = mount(TABLE)
     const input = cell(view, 1, 0)
+    input.focus()
     input.value = 'milk'
     key(input, 'Tab')
     expect(view.state.doc.toString()).toContain('| milk | 1 |')
+    // Writing the cell redraws the whole table. The caret has to end up in the
+    // cell to the right all the same — the redraw must not take it back to the
+    // first one, which it did as long as the widget's own hand-over ran for it.
+    await Promise.resolve()
     expect(document.activeElement).toBe(cell(view, 1, 1))
     view.destroy()
   })
 
-  it('walks back with Shift-Tab', () => {
+  it('walks back with Shift-Tab, writing on the way', async () => {
     const view = mount(TABLE)
-    key(cell(view, 1, 1), 'Tab', true)
+    const input = cell(view, 1, 1)
+    input.focus()
+    input.value = 'two'
+    key(input, 'Tab', true)
+    expect(view.state.doc.toString()).toContain('| a | two |')
+    await Promise.resolve()
     expect(document.activeElement).toBe(cell(view, 1, 0))
+    view.destroy()
+  })
+
+  it('hangs a new row on the bottom when Tab leaves the last cell', async () => {
+    const view = mount(TABLE)
+    key(cell(view, 1, 1), 'Tab')
+    expect(view.state.doc.toString()).toBe(TABLE + '\n|  |  |')
+    // and the caret is in the new row's first cell, where the writing goes on
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(view, 2, 0))
+    view.destroy()
+  })
+
+  it('writes the cell it is leaving while it grows the table', async () => {
+    const view = mount(TABLE)
+    const input = cell(view, 1, 1)
+    input.value = 'last'
+    key(input, 'Tab')
+    expect(view.state.doc.toString()).toBe(
+      '| Name | Value |\n| --- | ---: |\n| a | last |\n|  |  |',
+    )
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(view, 2, 0))
+    view.destroy()
+  })
+
+  it('does not grow the table when Shift-Tab leaves it at the front', () => {
+    const view = mount(TABLE)
+    key(cell(view, 0, 0), 'Tab', true)
+    expect(view.state.doc.toString()).toBe(TABLE)
+    expect(document.activeElement).not.toBe(cell(view, 0, 0))
+    view.destroy()
+  })
+
+  it('does not pull the caret into another table while a cell is being written', async () => {
+    const view = mount(TWO_TABLES)
+    // The text cursor stands at the end of the document, which is inside the
+    // last table — a redraw of every table then offers that one a caret to
+    // take, and it took it.
+    view.dispatch({ selection: { anchor: view.state.doc.length } })
+    const input = cellIn(tableAt(view, 0), 1, 0)
+    input.focus()
+    input.value = 'milk'
+    key(input, 'Tab')
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cellIn(tableAt(view, 0), 1, 1))
+    view.destroy()
+  })
+
+  it('walks the cells of the table the caret is in, not of the one above it', () => {
+    const view = mount(TWO_TABLES)
+    const second = tableAt(view, 1)
+    key(cellIn(second, 1, 0), 'Tab')
+    expect(document.activeElement).toBe(cellIn(second, 1, 1))
+    // `data-cell` counts from the top of a table, so the first table has a
+    // cell with the same key — and a lookup from the editor finds that one
+    expect(document.activeElement).not.toBe(cellIn(tableAt(view, 0), 1, 1))
     view.destroy()
   })
 
@@ -183,6 +293,18 @@ describe('the table in the editor', () => {
     expect(document.activeElement).toBe(cell(view, 1, 0))
     key(cell(view, 1, 0), 'Enter')
     expect(document.activeElement).not.toBe(cell(view, 1, 0))
+    view.destroy()
+  })
+
+  it('writes the cell and moves down with Enter, not back to the top left', async () => {
+    const view = mount(TABLE)
+    const input = cell(view, 0, 0)
+    input.focus()
+    input.value = 'Heading'
+    key(input, 'Enter')
+    expect(view.state.doc.toString()).toContain('| Heading | Value |')
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(view, 1, 0))
     view.destroy()
   })
 
@@ -380,6 +502,81 @@ describe('the row and column handles', () => {
     input.focus()
     handle(view, 'row', 1).dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
     expect(document.activeElement).toBe(input)
+    view.destroy()
+  })
+})
+describe('where an insert leaves the caret', () => {
+  it('goes to the leftmost cell of a row inserted below', async () => {
+    const view = mount(TABLE)
+    entry(openMenu(view, 1, 0), 'Insert row below').click()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(view, 2, 0))
+    view.destroy()
+  })
+
+  it('goes to the leftmost cell of a row inserted above', async () => {
+    const view = mount(TABLE)
+    entry(openMenu(view, 1, 1), 'Insert row above').click()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(view, 1, 0))
+    view.destroy()
+  })
+
+  it('goes to the topmost cell of a column inserted on either side', async () => {
+    const left = mount(TABLE)
+    entry(openMenu(left, 0, 0), 'Insert column left').click()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(left, 0, 0))
+    left.destroy()
+
+    const right = mount(TABLE)
+    entry(openMenu(right, 0, 1), 'Insert column right').click()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(right, 0, 2))
+    right.destroy()
+  })
+
+  it('gives a new row every column the others have', () => {
+    const below = mount(TABLE)
+    entry(openMenu(below, 1, 0), 'Insert row below').click()
+    const rows = below.contentDOM.querySelectorAll('.cm-md-table-row')
+    expect(rows).toHaveLength(3)
+    expect(rows[2].querySelectorAll('.cm-md-table-cell')).toHaveLength(2)
+    below.destroy()
+
+    // the header has no row above it, so its menu inserts below — and the new
+    // row still gets every column
+    const header = mount(TABLE)
+    entry(openMenu(header, 0, 0), 'Insert row below').click()
+    const headRows = header.contentDOM.querySelectorAll('.cm-md-table-row')
+    expect(headRows[1].querySelectorAll('.cm-md-table-cell')).toHaveLength(2)
+    header.destroy()
+  })
+})
+describe('where a click leaves the caret', () => {
+  it('keeps the cell the focus is going to, not the first one', async () => {
+    const view = mount(TABLE)
+    const from = cell(view, 1, 0)
+    from.value = 'milk'
+    // A click elsewhere in the table blurs this cell with the element that is
+    // receiving the focus attached to the event — the cell that was clicked.
+    from.dispatchEvent(new window.FocusEvent('blur', { relatedTarget: cell(view, 1, 1) }))
+    expect(view.state.doc.toString()).toContain('| milk | 1 |')
+    await Promise.resolve()
+    expect(document.activeElement).toBe(cell(view, 1, 1))
+    view.destroy()
+  })
+
+  it('leaves the caret alone when the focus goes outside the table', async () => {
+    const view = mount(TABLE)
+    const from = cell(view, 1, 0)
+    from.value = 'milk'
+    // clicking the page: the write still happens, but nothing may pull the
+    // caret back into the grid
+    from.dispatchEvent(new window.FocusEvent('blur', { relatedTarget: document.body }))
+    await Promise.resolve()
+    expect(document.activeElement).not.toBe(cell(view, 0, 0))
+    expect(document.activeElement).not.toBe(cell(view, 1, 1))
     view.destroy()
   })
 })
