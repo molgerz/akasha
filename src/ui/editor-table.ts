@@ -61,8 +61,19 @@ export type Cell = {
 export type TableData = {
   from: number
   to: number
+  /**
+   * The table exactly as the document had it when this widget was built.
+   *
+   * Everything the widget does to the document — a row, a column, a cell — is
+   * done at the ranges below, and a widget can outlive the document it was built
+   * from: a menu is opened, the parser moves something, the grid is redrawn and
+   * the open menu still holds the old ranges. Replacing those then takes text
+   * with it that was never part of the table. Before anything is written, this
+   * text has to still be there. src/ui/editor-table.ts
+   */
+  source: string
   /** the `---` line: it carries the alignment and is never drawn */
-  delimiter: { from: number; to: number }
+  delimiter: { from: number; to: number; source: string }
   head: Cell[]
   rows: Cell[][]
   /** the alignment each column asks for with `:---`, `:---:` or `---:` */
@@ -223,16 +234,24 @@ function tableData(table: SyntaxNode, doc: Text): TableData | null {
   let head: Cell[] = []
   const rows: Cell[][] = []
   let align: (string | null)[] = []
-  let delimiter = { from: table.from, to: table.from }
+  let delimiter = { from: table.from, to: table.from, source: '' }
   for (let child = table.firstChild; child; child = child.nextSibling) {
     if (child.name === 'TableHeader') head = rowCells(child, doc)
     else if (child.name === 'TableDelimiter') {
-      delimiter = { from: child.from, to: child.to }
+      delimiter = { from: child.from, to: child.to, source: doc.sliceString(child.from, child.to) }
       align = delimiterAlign(child, doc)
     } else if (child.name === 'TableRow') rows.push(rowCells(child, doc))
   }
   if (head.length === 0) return null
-  return { from: table.from, to: table.to, delimiter, head, rows, align }
+  return {
+    from: table.from,
+    to: table.to,
+    source: doc.sliceString(table.from, table.to),
+    delimiter,
+    head,
+    rows,
+    align,
+  }
 }
 
 /** A table as plain text, one string per cell — what the writing operations work on. */
@@ -668,6 +687,9 @@ export class TableWidget extends WidgetType {
    * text grew would push the end of the table out from under the append.
    */
   private appendRow(view: EditorView, input: HTMLInputElement, cell: Cell, newRow: number) {
+    // The row goes on the end of the table as this widget knows it; if that is
+    // not where the table ends any more, the append would land somewhere else.
+    if (!this.isCurrent(view)) return
     const changes: { from: number; to: number; insert: string }[] = []
     const change = this.cellChange(view, input, cell)
     if (change) changes.push(change)
@@ -701,7 +723,19 @@ export class TableWidget extends WidgetType {
     return true
   }
 
+  /**
+   * Is this still the table this widget was built from? `false` when the
+   * document has moved on — see `TableData.source`.
+   */
+  private isCurrent(view: EditorView): boolean {
+    return view.state.doc.sliceString(this.table.from, this.table.to) === this.table.source
+  }
+
   private edit(view: EditorView, change: (text: TableText) => void, userEvent = 'input') {
+    // A range that has moved since this widget was built replaces text that was
+    // never part of the table. Doing nothing is the only safe answer: the menu
+    // was opened against a document that no longer exists.
+    if (!this.isCurrent(view)) return
     const text = tableText(this.table)
     change(text)
     view.dispatch({
@@ -852,19 +886,24 @@ export class TableWidget extends WidgetType {
     const align = ['left', 'center', 'right'].map((alignment) => ({
       label: 'Align ' + alignment,
       current: this.table.align[column] === alignment,
-      run: () =>
+      run: () => {
         // Only the delimiter line changes: the rows are left exactly as they
-        // are, so aligning a column is not a rewrite of the whole table.
+        // are, so aligning a column is not a rewrite of the whole table. That
+        // one line has to still be there as well — see `TableData.source`.
+        if (!this.isCurrent(view)) return
+        const { from, to, source } = this.table.delimiter
+        if (view.state.doc.sliceString(from, to) !== source) return
         view.dispatch({
           changes: {
-            from: this.table.delimiter.from,
-            to: this.table.delimiter.to,
+            from,
+            to,
             insert: delimiterLine(
               this.table.align.map((value, index) => (index === column ? alignment : value)),
             ),
           },
           userEvent: 'input',
-        }),
+        })
+      },
     }))
     const deleteTable = {
       label: 'Delete table',

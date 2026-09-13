@@ -408,6 +408,18 @@ describe('the table\'s right-click menu', () => {
     view.destroy()
   })
 
+  it('does nothing when the table it was opened on has moved since', () => {
+    const view = mount('before\n\n' + TABLE)
+    const menu = openMenu(view, 1, 0)
+    // Something edits the document above the table. The widget that opened the
+    // menu is older than the table now, and its range reaches into the
+    // paragraph — replacing it would take the paragraph's last characters with
+    // it. A table operation from a stale widget is refused.
+    view.dispatch({ changes: { from: 0, insert: 'xxxxx' }, userEvent: 'input' })
+    entry(menu, 'Delete row').click()
+    expect(view.state.doc.toString()).toBe('xxxxxbefore\n\n' + TABLE)
+    view.destroy()
+  })
   it('deletes the whole table', () => {
     const view = mount('before\n\n' + TABLE + '\n\nafter')
     entry(openMenu(view, 0, 0), 'Delete table').click()

@@ -231,6 +231,14 @@ do rewrite the table — a column cannot be inserted any other way — and then 
 pipes come out canonical (`| a | b |`, one space on each side, alignment
 preserved from the delimiter row).
 
+**A table operation never works from a stale grid.** Everything the menu does is
+done at the ranges the widget was built from, and a widget can outlive its
+document: a menu opened, the parser moving something, the grid redrawn while the
+menu is still open. Replacing those ranges then takes text with it that was never
+part of the table. So each operation first checks that the table is still exactly
+the text it was built from, and does nothing when it is not — the menu was opened
+against a document that no longer exists. `src/ui/editor-table.ts`
+
 **A cell with nothing in it is still a cell.** The parser draws a cell only when
 there is something in it: `|  |  |` is nothing but pipes. So the grid is read off
 the *pipes* rather than off the cell nodes — otherwise a row of empty cells would
