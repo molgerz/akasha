@@ -42,9 +42,10 @@ export type SlashCommand = {
 }
 
 /**
- * The 2×2 skeleton the table entry writes: a header, the separator and one
- * empty row. Exported so the table-help work (the ticket's blocker) reuses the
- * one shape instead of copying it.
+ * The 3×2 skeleton the table entry writes: a header, the separator and two
+ * empty rows. Two, not one, because one row is a table you immediately have to
+ * extend — the skeleton is there to be typed *into*. Exported so the table-help
+ * work (the ticket's blocker) reuses the one shape instead of copying it.
  *
  * The leading blank line is deliberate. A table typed directly under a
  * paragraph needs it, and `---` under a paragraph is a Setext heading in
@@ -52,13 +53,13 @@ export type SlashCommand = {
  * the stored text still goes to foreign clients, so the menu writes text that
  * is a table everywhere.
  */
-export const TABLE_SKELETON = '\n\n| Column | Value |\n| --- | --- |\n|  |  |'
+export const TABLE_SKELETON = '\n\n| Column | Value |\n| --- | --- |\n|  |  |\n|  |  |'
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   {
     label: 'table',
     displayLabel: 'Table',
-    detail: '2×2 with a header row',
+    detail: '3×2 with a header row',
     insert: TABLE_SKELETON,
     cursor: TABLE_SKELETON.indexOf('Column'),
     select: 'Column'.length,

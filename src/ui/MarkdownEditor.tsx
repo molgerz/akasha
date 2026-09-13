@@ -223,18 +223,24 @@ function editorTheme(dark: boolean) {
       // `table`/`th`/`td`/`img` components in `src/ui/Markdown.tsx` — when one
       // of the two changes, the other has to follow.
       '.cm-md-table': {
+        position: 'relative',
         margin: '1.5rem 0',
         border: '1px solid var(--line)',
         borderRadius: '8px',
-        overflow: 'hidden',
+        // Not clipped: a row's handle sits on the left edge and a column's on
+        // the top edge, both just outside the border. The rounded corners come
+        // from the four corner cells instead, which is also what makes the
+        // header band follow them.
+        overflow: 'visible',
         width: '100%',
         boxSizing: 'border-box',
         // The line this widget sits in is `pre-wrap`; a grid inside it would
         // inherit that and break on every newline of its own DOM.
         whiteSpace: 'normal',
       },
-      '.cm-md-table-row': { display: 'grid' },
+      '.cm-md-table-row': { display: 'grid', position: 'relative' },
       '.cm-md-table-cell': {
+        position: 'relative',
         padding: '0.5rem 0.75rem',
         fontSize: '14px',
         lineHeight: '1.5',
@@ -249,13 +255,132 @@ function editorTheme(dark: boolean) {
         textAlign: 'left',
       },
       '.cm-md-table-row:last-child .cm-md-table-cell': { borderBottom: 'none' },
-      '.cm-md-image': { display: 'block', margin: '1.5rem 0', whiteSpace: 'normal' },
+      '.cm-md-table-head .cm-md-table-cell-first': { borderTopLeftRadius: '8px' },
+      '.cm-md-table-head .cm-md-table-cell-last': { borderTopRightRadius: '8px' },
+      '.cm-md-table-row:last-child .cm-md-table-cell-first': { borderBottomLeftRadius: '8px' },
+      '.cm-md-table-row:last-child .cm-md-table-cell-last': { borderBottomRightRadius: '8px' },
+      // A cell's editing surface: exactly over its text, transparent so the text
+      // shows through, and focusable — which a hidden element would not be, and
+      // Tab has to reach it. Only the caret makes it visible; `focus-within`
+      // swaps the two, so there is no class to toggle from JS.
+      '.cm-md-table-input': {
+        position: 'absolute',
+        inset: '0',
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '0.5rem 0.75rem',
+        border: 'none',
+        background: 'transparent',
+        font: 'inherit',
+        fontSize: '14px',
+        lineHeight: '1.5',
+        color: 'inherit',
+        textAlign: 'inherit',
+        opacity: '0',
+        outline: 'none',
+      },
+      '.cm-md-table-cell:focus-within .cm-md-table-text': { visibility: 'hidden' },
+      '.cm-md-table-cell:focus-within .cm-md-table-input': {
+        opacity: '1',
+        boxShadow: 'inset 0 0 0 2px var(--accent)',
+      },
+
+      // — the row and column handles —
+      // One click into a cell and two icons appear: one on the table's left
+      // edge level with that row, one on its top edge above that column. They
+      // sit in the margin the table already has, so nothing shifts, and a click
+      // opens the menu a right-click opens — narrowed to that row or column.
+      '.cm-md-table-handle': {
+        display: 'none',
+        position: 'absolute',
+        zIndex: '40',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '18px',
+        height: '18px',
+        padding: '0',
+        border: '1px solid var(--line-strong)',
+        borderRadius: '5px',
+        backgroundColor: 'var(--surface-2)',
+        color: 'var(--fg-subtle)',
+        cursor: 'pointer',
+      },
+      '.cm-md-table-handle-visible': { display: 'flex' },
+      '.cm-md-table-handle:hover': {
+        backgroundColor: 'var(--surface-selected)',
+        color: 'var(--fg)',
+      },
+      '.cm-md-table-handle-row': { left: '-9px', top: '50%', transform: 'translateY(-50%)' },
+      '.cm-md-table-handle-column': {
+        top: '-9px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+      },
+      '.cm-md-table-handle svg': { width: '12px', height: '12px' },
+
+      // — the table's right-click menu —
+      '.cm-md-table-menu': {
+        position: 'absolute',
+        zIndex: '50',
+        minWidth: '11rem',
+        padding: '0.25rem',
+        border: '1px solid var(--line-strong)',
+        borderRadius: '8px',
+        backgroundColor: 'var(--surface-2)',
+        boxShadow: '0 8px 24px rgb(0 0 0 / 0.12)',
+      },
+      '.cm-md-table-menu-item': {
+        display: 'block',
+        width: '100%',
+        padding: '0.35rem 0.6rem',
+        border: 'none',
+        borderRadius: '5px',
+        background: 'none',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '13px',
+        textAlign: 'left',
+        color: 'var(--fg)',
+        cursor: 'pointer',
+      },
+      '.cm-md-table-menu-item:hover:not(:disabled)': { backgroundColor: 'var(--surface-selected)' },
+      '.cm-md-table-menu-item:disabled': { color: 'var(--fg-subtle)', cursor: 'default' },
+      '.cm-md-table-menu-current': { fontWeight: '600' },
+
+      // — images —
+      // `inline-block`, not `block`: the wrapper is what a click selects and
+      // what the resize handle is pinned to, so it has to be the size of the
+      // picture and not of the measure.
+      '.cm-md-image': {
+        position: 'relative',
+        display: 'inline-block',
+        maxWidth: '100%',
+        margin: '1.5rem 0',
+        whiteSpace: 'normal',
+      },
       '.cm-md-image img': {
         display: 'block',
         maxWidth: '100%',
         borderRadius: '8px',
         border: '1px solid var(--line)',
       },
+      '.cm-md-image-selected': {
+        outline: '2px solid var(--accent)',
+        outlineOffset: '2px',
+        borderRadius: '8px',
+      },
+      '.cm-md-image-handle': {
+        display: 'none',
+        position: 'absolute',
+        right: '-7px',
+        bottom: '-7px',
+        width: '14px',
+        height: '14px',
+        borderRadius: '50%',
+        backgroundColor: 'var(--accent)',
+        border: '2px solid var(--surface-2)',
+        cursor: 'nwse-resize',
+      },
+      '.cm-md-image-selected .cm-md-image-handle': { display: 'block' },
       // — mentions —
       // A chip, not a link: it names a person, and clicking it in the editor
       // should place the cursor rather than navigate.

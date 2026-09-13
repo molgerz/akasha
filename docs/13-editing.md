@@ -3,9 +3,9 @@
 **Decision:** the editor has no Write/Preview switch, because there is nothing
 to switch between. The text is drawn the way it will be read while it is being
 typed. Typing `# ` and a space sizes the line as a heading on the spot; `- `
-turns into a bullet; `**bold**` goes bold; a pipe table is drawn as a table and
-an `![alt](url)` as the picture. The Markdown markers are only visible on the
-line the cursor is on.
+turns into a bullet; `**bold**` goes bold; a pipe table is the grid it is edited
+in and `![alt](url)` is the picture it points at. The Markdown markers are only
+visible on the line the cursor is on.
 
 **Why:** this is the thing a rich-text wiki gets right that a Markdown box does
 not.
@@ -54,12 +54,12 @@ Three deliberate exceptions:
   a list when you leave it: it reads as "it did not work". `- ` and `[ ]` are
   one marker here, so the dash goes with the box; Backspace takes the whole
   marker and leaves an ordinary bullet behind.
-- **A table reveals as a whole, not line by line.** Columns only line up if
-  every row is laid out against all the others, so a table is drawn as one block
-  and gives its source back as one block the moment the cursor is anywhere
-  inside it. Half a table over half its source would be neither. An image is a
-  single inline construct and needs no exception: it is drawn off the active
-  line and shows its Markdown on it, like everything else.
+- **A table and an image never fall back either.** A table *is* the grid it is
+  edited in — its columns only line up if every row is laid out against all the
+  others, and the pipes are a second copy of the column count — and an image is
+  the picture whose size is dragged. A wall of pipes or `![alt](url)` on screen
+  is exactly the "weird Markdown view" this editor exists to avoid. Both are one
+  thing the caret steps over, and both are edited where they are drawn.
 
 The indentation of a nested list item is markup too, so the active line shows
 it again — the item shifts by the two spaces it is written with, the way a
@@ -186,34 +186,74 @@ a line of text is not a divider at all but a Setext H2 for the line above — th
 trap this app closes by not recognising Setext headings. See
 `src/ui/markdown-flavour.ts`.
 
-### Tables and images
-
-| Type | Result |
-|---|---|
-| `| a | b |` with a `---` line under it | Drawn as the table it is: a header band, one rule under each row, and the column alignment the delimiter row asks for with `---`, `:---`, `---:` or `:---:` |
-| `![alt](url)` | The picture, loaded from wherever it points |
-
-A table is the one construct whose unit of reveal is the construct and not the
-line — see the exceptions above. It is drawn by a `StateField` of its own in
-`src/ui/markdown-live.ts` rather than by the line plugin, because replacing it
-spans line breaks and a `ViewPlugin` is not allowed to do that; the field is
-told about focus through `EditorView.focusChangeEffect`, because a state field
-cannot see the view.
-
-The columns are a CSS grid with the same count and the same fractions on every
-row, which is what lines them up — a `table` element's own layout does not
-survive being put inside a line of text. The cells are read the way a paragraph
-is: `**bold**`, `` `code` `` and a mention become the same thing here as anywhere
-else, and a link shows its label with its target hidden as markup.
-
-An image is drawn the way the page draws it and is loaded from wherever it
-points — there is no gate on the origin any more, in the editor as little as on
-the page. What that costs is written down in docs/09-security-privacy.md
-
 Code inside a fence is coloured, but by a small style bound to the theme tokens
 (`codeHighlight` in `src/ui/MarkdownEditor.tsx`), not by CodeMirror's default
 highlight style. That default also colours headings and bold text, which would
 be a second answer to a question the decorations have already answered.
+
+### Tables and images
+
+| Type | Result |
+|---|---|
+| `| a | b |` with a `---` line under it | The grid itself — a header band, one rule under each row, the alignment the delimiter row asks for with `---`, `:---`, `---:` or `:---:` — every cell edited in place, with a handle on the row's left edge and on the column's top edge |
+| `![alt](url)` | The picture, from wherever it points. Clicking it selects it and shows a handle; dragging the handle sets its width |
+
+**A table never becomes text again.** A cell is clicked and typed into, Tab and
+Shift-Tab walk the cells, Enter goes down a row, and Escape puts the cell back.
+Clicking one brings out the two handles Confluence has: a chevron on the table's
+left edge, level with that cell's row, and one on the top edge above that cell's
+column. The left one opens the row's operations — insert above, insert below,
+delete — and the top one the column's — insert left, insert right, delete, align.
+That is Confluence's vocabulary exactly, and it is what the handles are for: one
+click already says *which* row or column is meant, so the menu never has to ask.
+The header row offers no "row above" and cannot be deleted, because GFM has no
+row above it. A right-click on a cell still opens the whole set at once, in the
+same order, for anyone who reaches for it. `src/ui/editor-table.ts`
+
+Under all of it the document stays a plain Markdown table. A cell is written
+back when the caret *leaves* it, not on every keystroke: one edit is one undo
+step, and nothing is reformatted that nobody touched. The structural operations
+do rewrite the table — a column cannot be inserted any other way — and then the
+pipes come out canonical (`| a | b |`, one space on each side, alignment
+preserved from the delimiter row).
+
+**A cell is not a fragment of a rich-text document.** While the caret is in one
+it shows its own text, the way the active line shows its markup; every other
+cell shows the rendering, and `**bold**` and a mention chip are back as soon as
+the caret has left. The editing surface is a transparent `<input>` lying exactly
+over the cell's text: a click gives it the caret, and `:focus-within` swaps the
+two, so there is no class to toggle from JS. It needs no `contenteditable`, and
+the editor ignores every event inside a widget (`eventBelongsToEditor`), so
+none of it reaches CodeMirror's own input handling.
+
+**An image keeps its Markdown to itself.** `![alt](url)` never appears on
+screen: the picture is the picture, under the caret too, and it is atomic — the
+caret steps over it and one Backspace removes it whole. What a click offers is
+the size: the picture is selected and a handle appears; dragging it scales the
+picture, and letting go writes the width into the URL's fragment,
+`#width=480`. **The page draws that width too** (`MarkdownImage` in
+`src/ui/Markdown.tsx`) — a picture made smaller in the editor is smaller where
+it is read, which is the whole point of resizing it. No server ever receives a
+fragment, no other client draws one, and the image itself is untouched.
+**Cost, stated plainly:** another client shows the picture at its natural size,
+and `#width=480` is visible in the source, the history and the diff.
+`src/ui/image-width.ts`
+
+**A picture with no size of its own is measured, not guessed.** An SVG written
+`width="100%"` has no width to shrink-wrap against: inside the editor's box,
+which is exactly as wide as the picture in it, it laid out to nothing — the
+picture was a two-pixel sliver under the caret while the page, where it sits in
+a full-width block, drew it at the whole measure. So the editor measures such a
+picture once at that measure and pins the width to it; the URL stays untouched,
+because nothing was *chosen* here. `src/ui/editor-image.ts`
+
+Both are drawn by a `StateField` for the table and by the line plugin for the
+image. The table cannot come from a plugin at all: replacing it spans line
+breaks, and "decorations that replace line breaks may not be specified via
+plugins" — the same reason CodeMirror's own folding is a state field. Its
+columns are a CSS grid with the same count and the same fractions on every row,
+which is what lines them up; a `table` element's own layout does not survive
+being put inside a line of text.
 
 ### Mentions — `@`
 
@@ -270,9 +310,10 @@ third dropdown, built on the same autocompletion as `@` and `:` — one popup
 theme and one keyboard model, not a menu of its own.
 
 It exists for the one piece of Markdown that is genuinely hard to type by hand:
-the **pipe table**. The entry writes a 2×2 skeleton with a blank line above it
-and puts the cursor in the first header cell, so the next keystrokes are cell
-contents; the rendered page then treats it like any other GFM table
+the **pipe table**. The entry writes a 3×2 skeleton — a header and two body rows,
+because one row is a table to extend before it can be typed into — with a blank
+line above it, and puts the cursor in the first header cell, so the next
+keystrokes are cell contents; the rendered page then treats it like any other GFM table
 (`src/ui/editor-slash.ts` exports the skeleton as `TABLE_SKELETON`). The other
 entries insert their block and leave the cursor where the writing continues —
 the code entry lands on the fence's language line, the divider after the rule.
@@ -395,13 +436,12 @@ there for the second question — "how do I get a quote?" — not the first one.
 
 ## Open
 
-- **Tables.** The `/` menu writes the skeleton, the editor draws the table
-  from it and [`Markdown.tsx`](../src/ui/Markdown.tsx) renders GFM tables, wide
-  ones scrolling. What is still missing is help *editing* one: moving between
-  cells, keeping the pipes aligned and adding a column — today a table hands its
-  source back as a whole and is edited as the text it is. A pipe table is the one
-  piece of Markdown that really is hard by hand, and column-aware editing is the
-  half of it the menu does not cover.
+- **Tables.** `/table` writes the skeleton, the editor draws the grid and
+  edits it there — rows and columns in and out from the handles on its edge —
+  and [`Markdown.tsx`](../src/ui/Markdown.tsx) renders GFM tables, wide ones
+  scrolling. What is still missing is what a spreadsheet has and a page does not
+  need yet: moving a row or a column by dragging, selecting a range of cells and
+  pasting a block out of a spreadsheet.
 - **Macros and layouts.** The insert menu (`/table`, `/image`, `/code`,
   `/quote`, `/divider`) holds the blocks the plain editor needs; the wiki-style
   macro and layout entries are still not built.

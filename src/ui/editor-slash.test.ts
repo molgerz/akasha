@@ -121,10 +121,17 @@ describe('the / trigger', () => {
 })
 
 describe('what a / entry writes', () => {
-  it('writes the 2×2 table skeleton and selects the first header cell', () => {
+  it('writes the 3×2 table skeleton and selects the first header cell', () => {
     const { text, from, to } = apply('/', 'table')
     expect(text).toBe(TABLE_SKELETON)
-    expect(TABLE_SKELETON).toContain('| Column | Value |')
+    // a header and *two* body rows — one row would be a table to extend before
+    // it could be typed into
+    expect(TABLE_SKELETON.split('\n').slice(2)).toEqual([
+      '| Column | Value |',
+      '| --- | --- |',
+      '|  |  |',
+      '|  |  |',
+    ])
     // the placeholder is selected, so typing replaces it instead of jamming
     // against the word "Column"
     expect(text.slice(from, to)).toBe('Column')

@@ -11,6 +11,7 @@ import { shortNpub, toNpub } from '../nostr/profile'
 import { remarkMentions } from './markdown-mentions'
 import { rehypeBlankLines } from './markdown-blank-lines'
 import { remarkNoSetextHeadings } from './markdown-flavour'
+import { imageWidth } from './image-width'
 
 /**
  * Sanitising is mandatory, not optional: content comes from arbitrary keys.
@@ -116,12 +117,18 @@ const COMPACT: Scale = {
  */
 function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
   if (!src) return null
+  // The width a resize chose lives in the URL's fragment. Drawing it here is
+  // the other half of that contract: what is made smaller in the editor is
+  // smaller on the page. `max-w-full` still caps it on a narrow screen.
+  // src/ui/image-width.ts
+  const width = imageWidth(src)
   return (
     <img
       src={src}
       alt={alt ?? ''}
       title={title}
       loading="lazy"
+      style={width === null ? undefined : { width: width + 'px' }}
       className="my-6 max-w-full rounded-lg border border-line"
     />
   )
