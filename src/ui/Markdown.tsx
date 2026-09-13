@@ -9,7 +9,7 @@ import { mentionPubkey } from '../nostr/mentions'
 import { useProfile } from '../nostr/profile-store'
 import { shortNpub, toNpub } from '../nostr/profile'
 import { remarkMentions } from './markdown-mentions'
-import { rehypeBlankLines } from './markdown-blank-lines'
+import { normaliseInvisibleLines, rehypeBlankLines } from './markdown-blank-lines'
 import { remarkNoSetextHeadings } from './markdown-flavour'
 import { imageWidth } from './image-width'
 
@@ -257,10 +257,18 @@ export function Markdown({
   const s = density === 'page' ? PAGE : COMPACT
   const text = `${s.block} ${s.measure}`.trim()
   const heading = (level: string) => `${level} ${s.measure}`.trim()
+  // An "empty" line that only holds invisible whitespace is a parsing trap,
+  // not content: turned into an empty line before the parser reads the source,
+  // so it draws as the line the writer saw instead of joining the paragraphs.
+  // src/ui/markdown-blank-lines.ts
+  const source = normaliseInvisibleLines(children)
 
   return (
     // The first block must not push the whole text down by its own top margin.
-    <div className="[&>*:first-child]:mt-0">
+    // `md-content` is what lets `.md-content > *` in src/index.css take the
+    // block margins away, so the empty lines are the only vertical space:
+    // src/ui/markdown-blank-lines.ts
+    <div className="md-content [&>*:first-child]:mt-0">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMentions, remarkNoSetextHeadings]}
         // The order is the point: everything the author wrote is sanitised
@@ -436,7 +444,7 @@ export function Markdown({
           ),
         }}
       >
-        {children}
+        {source}
       </ReactMarkdown>
     </div>
   )
