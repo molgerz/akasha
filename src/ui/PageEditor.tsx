@@ -13,7 +13,7 @@ import {
   uploadAttachment,
 } from '../nostr/blossom'
 import { hasConflictMarkers, mergeThreeWay } from '../domain/merge'
-import { shortNpub, toNpub } from '../nostr/profile'
+import { displayNameOrNpub } from '../nostr/profile-store'
 import { SignInButton } from './SignInButton'
 import { Button, Callout } from './controls'
 import { HeaderActions } from './layout/PageFrame'
@@ -228,19 +228,19 @@ export function PageEditor({
       const theirs = live.head
       const merged = mergeThreeWay(baseRevision.content, content, theirs.content, {
         mine: 'your version',
-        theirs: `version by ${shortNpub(toNpub(theirs.author))}`,
+        theirs: `version by ${displayNameOrNpub(theirs.author)}`,
       })
       setBaseRevision(theirs)
       setContent(merged.content)
       setNotice(
         merged.status === 'conflict'
-          ? `${shortNpub(toNpub(theirs.author))} changed this page in the meantime. ` +
+          ? `${displayNameOrNpub(theirs.author)} changed this page in the meantime. ` +
               `${merged.conflicts} spot(s) overlap — please resolve them in the text, ` +
               'remove the markers and save again.'
           : merged.status === 'identical'
-            ? `${shortNpub(toNpub(theirs.author))} saved in the meantime, with the same ` +
+            ? `${displayNameOrNpub(theirs.author)} saved in the meantime, with the same ` +
                 'result. Nothing to do.'
-            : `${shortNpub(toNpub(theirs.author))} changed this page in the meantime. ` +
+            : `${displayNameOrNpub(theirs.author)} changed this page in the meantime. ` +
                 'Both changes were merged — please review and save again.',
       )
       return

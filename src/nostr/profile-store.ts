@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { client } from './client'
 import { KINDS } from './kinds'
-import { parseProfile } from './profile'
+import { displayName, parseProfile, toNpub } from './profile'
 import type { Profile } from './profile'
 import { DEFAULT_RELAY_URL, PROFILE_RELAYS } from './relay-status'
 
@@ -113,6 +113,16 @@ export function cacheProfile(pubkey: string, profile: Profile): void {
  */
 export function peekProfile(pubkey: string): Profile | null {
   return store.get(pubkey) ?? null
+}
+
+/**
+ * The name to put in a plain string — the profile name, the shortened npub
+ * only when the key has no profile. Reads what is cached right now; render
+ * contexts that need it to update when a profile lands use `AuthorName`
+ * instead, which subscribes through `useProfile`.
+ */
+export function displayNameOrNpub(pubkey: string): string {
+  return displayName(store.get(pubkey) ?? null, toNpub(pubkey))
 }
 
 /** Warm the cache for a set of keys, e.g. the members of a space. */

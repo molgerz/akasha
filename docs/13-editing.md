@@ -378,12 +378,11 @@ the name.
 in a stored page would point at whoever calls themselves alice on the day it is
 read. The key cannot drift.
 
-This is the one place the app shows a display name without the npub next to it,
-which [06](06-ui-information-architecture.md) otherwise forbids. It is
-deliberate: a mention sits inside a sentence, and `npub1qz…7k4f` mid-sentence is
-unreadable. The key stays one hover away (`title`), the chip's shape says it
-stands for a person, and — unlike a byline — a mention is not a claim about who
-signed anything.
+A mention shows the name with the key one hover away (`title`), the same way
+every author line does ([06](06-ui-information-architecture.md)): a mention sits
+inside a sentence, and `npub1qz…7k4f` mid-sentence is unreadable. The chip's
+shape says it stands for a person, and — unlike a byline — a mention is not a
+claim about who signed anything.
 
 The dropdown lists the name **with** the shortened npub beside it, because that
 is the moment somebody picks between two people. Until a profile has arrived

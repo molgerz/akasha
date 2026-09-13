@@ -60,10 +60,11 @@ One timeline per page, newest first:
 ● 10:02  alice   created the page                  [diff]
 ```
 
-Every entry shows an avatar and display name from `kind 0` with the shortened
-npub next to it. The npub is the truth, the display name is only convenience —
-the UI makes that visible (name in grey, npub in monospace beside it) so that
-two people with the same display name cannot be confused.
+Every entry shows an avatar and the display name from `kind 0`. The npub is the
+truth and the name is convenience, but the list no longer repeats the key after
+every name: the shortened npub appears only when a key has no profile, and the
+revision's *Details* view prints the full npub next to the event id.
+[06](06-ui-information-architecture.md)
 
 Features:
 
@@ -71,7 +72,8 @@ Features:
   (`jsdiff`). Because every revision is a full-text snapshot, any pair can be
   compared, not just neighbours.
 - **Blame** — line-by-line attribution: for each line the most recent revision
-  that introduced it, plus its npub. Computed client-side from the chain.
+  that introduced it, with its author's npub in the cell's tooltip. Computed
+  client-side from the chain.
 - **Restore** — publishes a *new* revision with the old content,
   `parent-rev = current head`, plus the tag `restore-of = <old id>`. Nothing is
   deleted; the history stays append-only.

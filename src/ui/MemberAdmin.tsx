@@ -83,10 +83,9 @@ export function MemberAdmin({
         <SectionLabel>Members · {members.length}</SectionLabel>
       </div>
 
-      {/* One row per member, and the row is where the key is shown in full-ish
-          form: this is a list somebody reads to decide who is allowed to write
-          here, so the npub sits next to the name rather than in a tooltip.
-          docs/06-ui-information-architecture.md */}
+      {/* One row per member. The name is primary (CON-33); the key stays in
+          the row's tooltip, where a check can be made without repeating the
+          npub next to every name. docs/06-ui-information-architecture.md */}
       <Card>
         <ul className="divide-y divide-line">
           {members.map((pubkey) => {
@@ -97,7 +96,7 @@ export function MemberAdmin({
                 key={pubkey}
                 className="group/member flex flex-wrap items-center gap-2 px-3.5 py-2.5 text-xs"
               >
-                <Author pubkey={pubkey} avatar showNpub={false} />
+                <Author pubkey={pubkey} avatar />
                 {roles.length > 0 ? (
                   <span className="rounded-full bg-surface-0 px-2 py-0.5 font-medium text-fg-muted">
                     {roles.join(', ')}
