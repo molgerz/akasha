@@ -10,7 +10,7 @@ import { useProfile } from '../nostr/profile-store'
 import { shortNpub, toNpub } from '../nostr/profile'
 import { remarkMentions } from './markdown-mentions'
 import { normaliseInvisibleLines, rehypeBlankLines } from './markdown-blank-lines'
-import { remarkNoSetextHeadings } from './markdown-flavour'
+import { remarkLineBreaks, remarkNoSetextHeadings } from './markdown-flavour'
 import { imageWidth } from './image-width'
 
 /**
@@ -270,7 +270,7 @@ export function Markdown({
     // src/ui/markdown-blank-lines.ts
     <div className="md-content [&>*:first-child]:mt-0">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMentions, remarkNoSetextHeadings]}
+        remarkPlugins={[remarkGfm, remarkMentions, remarkNoSetextHeadings, remarkLineBreaks]}
         // The order is the point: everything the author wrote is sanitised
         // first, and only then is our own spacing put in.
         rehypePlugins={[

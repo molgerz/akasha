@@ -521,6 +521,23 @@ The plugin runs *after* `rehype-sanitize`, on purpose: the spacer carries a
 afterwards keeps the check on the author's content strict while ours, which is
 not the author's, gets through.
 
+### Line breaks
+
+A single newline inside a paragraph is a soft break to CommonMark: the lines are
+joined and a space stands where the newline was, so `Hallo` and `Test` on two
+lines read `Hallo Test`. The editor draws the source, so there the newline is a
+line, and the same text reads differently in the two views — the empty-line
+disagreement one line down. In a wiki the writer presses Enter and means it.
+
+`remarkLineBreaks` in `src/ui/markdown-flavour.ts` turns a soft break into a
+`break` node, the node a hard break already uses, so the page draws a `<br>`.
+It only touches the page parser: the editor already draws every newline as a
+line, so there is nothing to tell it. The stored text stays plain Markdown — a
+client that keeps CommonMark's soft break reads the same text as one sentence.
+That is the cost, and it is the same trade as the empty lines: the page matches
+the editor it was written in. A newline inside a fenced code block is untouched;
+a fence carries its content as code, not as paragraph text.
+
 ## Formatting help, folded away
 
 There is a `Formatting` disclosure under the editor listing every shortcut
