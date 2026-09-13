@@ -72,7 +72,7 @@ backlog, see [docs/10](docs/10-roadmap.md).
 | [NIP-29](https://github.com/nostr-protocol/nips/blob/master/29.md) groups | ✅ | Spaces, membership, moderation. The relay is the authority | `src/domain/group-state.ts`, `src/nostr/moderation.ts` |
 | [NIP-31](https://github.com/nostr-protocol/nips/blob/master/31.md) `alt` | ✅ | Plain-text description on our own kinds so foreign clients can show something | `src/nostr/publish-page.ts` |
 | [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) AUTH | ✅ | Authenticating to the relay, automatically on every new connection, retried after `auth-required` | `src/nostr/client.ts` |
-| [Blossom](https://github.com/hzrd149/blossom) BUD-01/02 | ✅ | Attachments: the blob lives on the server under its sha256, the event only holds the URL | `src/nostr/blossom.ts` |
+| [Blossom](https://github.com/hzrd149/blossom) BUD-01/02/11 | ✅ | Attachments: the blob lives on the server under its sha256, the event only holds the URL. The server files a blob under a group and checks membership before it reads one back (CON-26) | `src/nostr/blossom.ts`, `src/nostr/attachment-access.ts` |
 | [NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md) deletion request | ❌ | Deleting happens only through NIP-29 (`9005`), which a relay actually enforces | — |
 | [NIP-46](https://github.com/nostr-protocol/nips/blob/master/46.md) bunker | ❌ | Planned as a second signer implementation behind the same interface | — |
 | [NIP-50](https://github.com/nostr-protocol/nips/blob/master/50.md) search | ❌ | Deliberately not: not every relay supports it, and a relay-dependent search would break offline. Search runs locally | `src/domain/search.ts` |
@@ -92,7 +92,7 @@ backlog, see [docs/10](docs/10-roadmap.md).
 | **31818** page placement | ⚠️ our own kind | Where a page hangs in the tree: `page-parent` and `page-order`. Addressable on `(pubkey, 31818, d)`, so moving a page **overwrites** it — a move is not an edit and appends nothing to the page's history. Not `30819`, which is NIP-54's wiki redirect |
 | **1111** comment | ⚠️ | NIP-22, but anchored to `(h, d)` instead of a root event |
 | **20817** diagnostic ping | ⚠️ our own kind | Ephemeral (20000–29999), not stored. Only answers "may I write here?" |
-| **24242** Blossom upload | ✅ | Authorises a file upload. Not a relay event; it goes to the Blossom server over HTTP |
+| **24242** Blossom auth | ✅ | Authorises a file upload (`t=upload`, bound to the content by `x` and to a group by `h`) or a read (`t=get`). Not a relay event; it goes to the Blossom server over HTTP |
 | **22242** relay AUTH | ✅ | NIP-42, produced by `nostr-tools` |
 | **9000** / **9001** add/remove member | ✅ | A request to the relay, which verifies admin status |
 | **9005** delete event | ✅ | Moderation; the relay enforces the deletion |
@@ -261,6 +261,7 @@ internal pool does not authenticate, and `info` hangs). Hence the raw `req`.
 | `VITE_RELAY_URL` | `ws://localhost:8080` | The group relay. It is part of a space's identity (`host'group`) |
 | `VITE_PROFILE_RELAYS` | empty | Relays for kind 0. Empty means the app shows npubs instead of names — more honest than an invented name |
 | `VITE_BLOSSOM_SERVER` | empty | Blossom server for attachments. Empty means the attachment button is disabled |
+| `VITE_BLOSSOM_SERVICE_PUBKEY` | empty | The Blossom server's service identity, added as a member when a space is created in the app so the server can check attachment rights. `BLOSSOM_SEC` in `scripts/.dev-keys` is the local equivalent |
 
 * * *
 
@@ -300,6 +301,10 @@ Named honestly, because they matter when building on top of this:
   elsewhere remain.
 - ⚠️ **`created_at` is manipulable**, because the client sets it. Ordering
   primarily follows the `parent-rev` chain; the clock is for display.
+- ⚠️ **Attachment rights are enforced by the file server, not the relay.**
+  NIP-29 has no notion of a blob. The Blossom server files each upload under a
+  group and checks a reader's membership against `39002` (CON-26); a picture
+  embedded from a foreign host is outside that and stays public.
 
 * * *
 
@@ -314,7 +319,7 @@ Named honestly, because they matter when building on top of this:
 | Where a page hangs, and the sibling order | `src/domain/placement.ts`, `src/domain/order.ts`, `src/nostr/publish-placement.ts` |
 | Three-way merge | `src/domain/merge.ts` |
 | Group state and moderation | `src/domain/group-state.ts`, `src/nostr/moderation.ts` |
-| Attachments | `src/nostr/blossom.ts`, `scripts/dev-blossom.mjs` |
+| Attachments | `src/nostr/blossom.ts`, `src/nostr/attachment-access.ts`, `scripts/dev-blossom.mjs`, `scripts/blossom-acl.mjs` |
 
 The reasoning behind every decision is in [docs/](docs/README.md), the working
 rules for this repo in [AGENTS.md](AGENTS.md).

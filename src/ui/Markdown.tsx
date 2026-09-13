@@ -12,6 +12,12 @@ import { remarkMentions } from './markdown-mentions'
 import { normaliseInvisibleLines, rehypeBlankLines } from './markdown-blank-lines'
 import { remarkLineBreaks, remarkNoSetextHeadings } from './markdown-flavour'
 import { imageWidth } from './image-width'
+import {
+  attachmentSrcSync,
+  loadAttachmentUrl,
+  openAttachment,
+  isProtectedAttachment,
+} from '../nostr/attachment-access'
 
 /**
  * Sanitising is mandatory, not optional: content comes from arbitrary keys.
@@ -116,6 +122,34 @@ const COMPACT: Scale = {
  * point. The trade is written down in docs/09-security-privacy.md.
  */
 function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
+  // A blob on our own Blossom server now needs a read token, and a plain
+  // `<img src>` cannot send one — so it is fetched and drawn from an object
+  // URL. Foreign hosts, and everything before a session exists, stay exactly as
+  // they were. CON-26, docs/09-security-privacy.md
+  const [resolved, setResolved] = useState<string | null>(src ? attachmentSrcSync(src) : null)
+  useEffect(() => {
+    if (!src) {
+      setResolved(null)
+      return
+    }
+    const direct = attachmentSrcSync(src)
+    if (direct !== null) {
+      setResolved(direct)
+      return
+    }
+    let cancelled = false
+    void loadAttachmentUrl(src)
+      .then((url) => {
+        if (!cancelled) setResolved(url)
+      })
+      .catch(() => {
+        if (!cancelled) setResolved(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [src])
+
   if (!src) return null
   // The width a resize chose lives in the URL's fragment. Drawing it here is
   // the other half of that contract: what is made smaller in the editor is
@@ -124,7 +158,7 @@ function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?
   const width = imageWidth(src)
   return (
     <img
-      src={src}
+      src={resolved ?? undefined}
       alt={alt ?? ''}
       title={title}
       loading="lazy"
@@ -360,9 +394,22 @@ export function Markdown({
             // hand end up here.
             const pubkey = typeof href === 'string' ? mentionPubkey(href) : null
             if (pubkey) return <Mention pubkey={pubkey} />
+            // A non-image attachment on our Blossom server needs the same read
+            // token as an image. Fetching it on click and downloading through a
+            // blob URL keeps the token out of the tab and the history. CON-26
+            const protectedHref =
+              typeof href === 'string' && isProtectedAttachment(href) ? href : null
             return (
               <a
                 href={href}
+                onClick={
+                  protectedHref
+                    ? (event) => {
+                        event.preventDefault()
+                        void openAttachment(protectedHref)
+                      }
+                    : undefined
+                }
                 className={cx('text-accent-fg underline underline-offset-2', className)}
                 rel="noreferrer noopener"
                 {...props}

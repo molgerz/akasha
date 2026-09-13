@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createGroupAndWait, editMetadata } from '../nostr/moderation'
+import { addMember, createGroupAndWait, editMetadata } from '../nostr/moderation'
+import { BLOSSOM_SERVICE_PUBKEY } from '../nostr/blossom'
 import { classifyRejection } from '../nostr/client'
 import { APP_CONTENT_KINDS, normalizeSlug } from '../nostr/kinds'
 import { DEFAULT_RELAY_URL } from '../nostr/relay-status'
@@ -102,6 +103,15 @@ export function CreateSpaceForm() {
               : 'The relay was still indexing the new space when we tried to name it.'),
         )
         return
+      }
+
+      // The Blossom server reads a private group's member list to answer "may
+      // this reader have the attachment?", so its service identity has to be a
+      // member of every space that stores files. Best effort: if it fails, an
+      // admin can still add the pubkey later, and only attachment reads are
+      // affected. CON-26
+      if (BLOSSOM_SERVICE_PUBKEY) {
+        await addMember(session.signer, { ...base, pubkey: BLOSSOM_SERVICE_PUBKEY })
       }
 
       navigate(`/s/${encodeURIComponent(address)}`)

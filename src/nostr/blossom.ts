@@ -15,8 +15,27 @@ export type UploadResult =
 
 export const BLOSSOM_SERVER: string = (import.meta.env.VITE_BLOSSOM_SERVER ?? '').trim()
 
+/**
+ * The pubkey of the Blossom server's own service identity. The server needs it
+ * to read a private group's `39002` and answer "is this reader a member?" —
+ * so it has to be a member of every space that stores attachments. When set,
+ * creating a space adds it (CON-26).
+ */
+export const BLOSSOM_SERVICE_PUBKEY: string = (
+  import.meta.env.VITE_BLOSSOM_SERVICE_PUBKEY ?? ''
+).trim()
+
 export function attachmentsEnabled(): boolean {
   return BLOSSOM_SERVER.length > 0
+}
+
+/** This server's hostname, without the port — BUD-11 scopes a token by domain. */
+export function blossomHost(): string {
+  try {
+    return new URL(BLOSSOM_SERVER).hostname
+  } catch {
+    return ''
+  }
 }
 
 /** Why an upload cannot happen without a server — shown, not swallowed. */
@@ -36,21 +55,40 @@ async function sha256Hex(data: ArrayBuffer): Promise<string> {
  * suggest a gate that is no longer there. docs/09-security-privacy.md
  */
 
-export async function uploadAttachment(signer: Signer, file: File): Promise<UploadResult> {
+/**
+ * `groupId` is not decoration: the upload token files the blob under its
+ * group (`h`) so the server can later check a reader against that group's
+ * membership. Without it the blob would be unreachable to everyone.
+ */
+export async function uploadAttachment(
+  signer: Signer,
+  file: File,
+  { groupId }: { groupId: string },
+): Promise<UploadResult> {
   if (!attachmentsEnabled()) {
     return { ok: false, reason: NO_BLOSSOM_SERVER }
+  }
+  if (!groupId) {
+    return { ok: false, reason: 'No space to file the attachment under.' }
   }
 
   const data = await file.arrayBuffer()
   const hash = await sha256Hex(data)
 
+  const now = Math.floor(Date.now() / 1000)
   const auth = await signer.signEvent({
     kind: KINDS.BLOSSOM_AUTH,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: now,
     tags: [
       ['t', 'upload'],
+      // x binds the token to exactly this content; the server requires it.
       ['x', hash],
-      ['expiration', String(Math.floor(Date.now() / 1000) + 300)],
+      // server scopes the token to our host, so a leak cannot be replayed
+      // against another Blossom server.
+      ['server', blossomHost()],
+      // h is the NIP-29 group the blob belongs to — the read check looks here.
+      ['h', groupId],
+      ['expiration', String(now + 300)],
     ],
     content: `upload attachment ${file.name}`,
   })

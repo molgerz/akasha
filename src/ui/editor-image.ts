@@ -1,6 +1,7 @@
 import { WidgetType } from '@codemirror/view'
 import type { EditorView } from '@codemirror/view'
 import { clampImageWidth, imageWidth, withImageWidth } from './image-width'
+import { attachmentSrcSync, loadAttachmentUrl } from '../nostr/attachment-access'
 
 /**
  * An image in the editor: the picture, always.
@@ -95,7 +96,21 @@ export class ImageWidget extends WidgetType {
       fitCleanup.set(wrapper, () => window.removeEventListener('resize', onResize))
     }
     // Set last, so a cached picture cannot finish before the listener is on.
-    img.src = this.src
+    // A blob on our own Blossom server is fetched with a read token and drawn
+    // from an object URL; a foreign picture is drawn directly, as before.
+    // CON-26, src/nostr/attachment-access.ts
+    const direct = attachmentSrcSync(this.src)
+    if (direct !== null) {
+      img.src = direct
+    } else {
+      void loadAttachmentUrl(this.src)
+        .then((url) => {
+          if (wrapper.isConnected) img.src = url
+        })
+        .catch(() => {
+          /* signed out or not a member: the picture simply stays empty */
+        })
+    }
     if (width === null) queueMicrotask(fit)
 
     const handle = document.createElement('span')
