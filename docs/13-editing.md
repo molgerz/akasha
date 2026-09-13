@@ -492,20 +492,51 @@ looks nothing like what was written.
 So the gap is read back off the positions the parser recorded and put in as
 height, by `rehypeBlankLines` in `src/ui/markdown-blank-lines.ts`. The rule:
 
-- the **first** empty line separates the two paragraphs. That separation is the
-  page's own rhythm — 0.9em, not a line — and it is not drawn as one;
-- **every further** empty line is one the writer put there on purpose and is
-  kept, at exactly the height it has in the editor;
+- **every** empty line the writer typed is a line, including the single empty
+  line that separates two paragraphs, and is kept at exactly the height it has
+  in the editor. The writer typed a line and the page shows a line;
 - **before the first block** there is nothing to separate, so every empty line
-  counts;
+  counts as well;
 - **after the last block** they are dropped. Trailing empty lines are where the
   cursor was left, not something anybody typed.
+
+The paragraph margin does not do this job. It used to stand in for the first
+empty line, but it collapses to less than a line, so a single empty line came
+out shorter than the editor's. `.md-content > *` in `src/index.css` takes the
+vertical margins off the top-level blocks instead, and the spacers are the
+whole of the vertical rhythm between them. Top level only: a paragraph inside
+a quote or a loose list is not a paragraph break and keeps its own spacing.
+
+A line that holds only invisible characters — U+00A0 from Option-Space, the
+other non-ASCII spaces, the zero-width ones — is the same trap as
+`- [<nbsp>]` in a task marker. CommonMark does not count it as blank, so it
+continues the paragraph, the line break collapses to a space, and two separate
+paragraphs arrive as one that reads `a b` while the editor draws an empty line.
+`normaliseInvisibleLines`, in the same file, turns such a line into an empty
+line before the parser sees the source. An invisible character inside a
+sentence is real text and is left alone.
 
 The plugin runs *after* `rehype-sanitize`, on purpose: the spacer carries a
 `style`, which is exactly the sort of attribute the schema strips. Running
 afterwards keeps the check on the author's content strict while ours, which is
-not the author's, gets through. Top level only — an empty line inside a
-blockquote or a list item is not a paragraph break.
+not the author's, gets through.
+
+### Line breaks
+
+A single newline inside a paragraph is a soft break to CommonMark: the lines are
+joined and a space stands where the newline was, so `Hallo` and `Test` on two
+lines read `Hallo Test`. The editor draws the source, so there the newline is a
+line, and the same text reads differently in the two views — the empty-line
+disagreement one line down. In a wiki the writer presses Enter and means it.
+
+`remarkLineBreaks` in `src/ui/markdown-flavour.ts` turns a soft break into a
+`break` node, the node a hard break already uses, so the page draws a `<br>`.
+It only touches the page parser: the editor already draws every newline as a
+line, so there is nothing to tell it. The stored text stays plain Markdown — a
+client that keeps CommonMark's soft break reads the same text as one sentence.
+That is the cost, and it is the same trade as the empty lines: the page matches
+the editor it was written in. A newline inside a fenced code block is untouched;
+a fence carries its content as code, not as paragraph text.
 
 ## Formatting help, folded away
 

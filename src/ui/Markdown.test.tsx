@@ -81,14 +81,34 @@ describe('Markdown', () => {
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['https://example.com', null])
   })
 
-  it('keeps the empty lines the writer left, which Markdown itself collapses', () => {
+  it('draws a single empty line the way the editor does', () => {
+    // The reported case. The writer typed one line between the two, so the page
+    // shows one line — 17px over 1.75 — rather than letting the paragraph
+    // margin stand in for it.
+    const page = render('hallihallo\n\nneue zeile')
+    const spacers = [...page.querySelectorAll('div[aria-hidden]')]
+    expect(spacers.map((s) => (s as HTMLElement).style.height)).toEqual(['calc(29.75px)'])
+    expect(spacers[0].nextElementSibling?.textContent).toBe('neue zeile')
+  })
+
+  it('keeps a longer run of empty lines at its own height', () => {
     const page = render('Para A\n\n\n\nPara B\n\nPara C\n\n\n')
     const spacers = [...page.querySelectorAll('div[aria-hidden]')]
-    // One before B — three empty lines, one of which separates the paragraphs
-    // — and none before C or at the end. 59.5px is two lines at the page's
-    // 17px over 1.75, so the gap is as tall here as it is in the editor.
-    expect(spacers.map((s) => (s as HTMLElement).style.height)).toEqual(['calc(59.5px)'])
+    // Three lines before B (89.25px), one before C (29.75px), none at the end:
+    // every empty line the writer typed is a line here too.
+    expect(spacers.map((s) => (s as HTMLElement).style.height)).toEqual(['calc(89.25px)', 'calc(29.75px)'])
     expect(spacers[0].nextElementSibling?.textContent).toBe('Para B')
+    expect(spacers[1].nextElementSibling?.textContent).toBe('Para C')
+  })
+
+  it('does not let an invisible "empty" line merge two paragraphs', () => {
+    // U+00A0 — Option-Space. CommonMark counts it as text and collapses the
+    // line break, so without normalising it the page would read `a b` while the
+    // editor draws an empty line.
+    const page = render('a\n\u00a0\nb')
+    expect([...page.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['a', 'b'])
+    const spacers = [...page.querySelectorAll('div[aria-hidden]')]
+    expect(spacers.map((s) => (s as HTMLElement).style.height)).toEqual(['calc(29.75px)'])
   })
 
   it('draws a task as a checkbox, ticked or not', () => {
