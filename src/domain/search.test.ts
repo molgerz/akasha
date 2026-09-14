@@ -77,14 +77,20 @@ describe('highlightParts', () => {
 })
 
 describe('a hidden page', () => {
+  // Both directions, because one of them alone proves nothing: an
+  // implementation that never returns a hit would pass the exclusion on its
+  // own. The pair pins that the tombstone is what makes the difference.
   it('is never a search hit — a result is navigation', () => {
-    const revisions = [
-      rev('notes', 'Release notes', 'the release notes'),
-      { ...rev('notes', 'Release notes', 'the release notes'), id: 'gone', createdAt: 2000, parentRevs: ['notes'], tombstone: true },
-    ]
-    const pages = buildPages(revisions)
-    expect(pages[0].hidden).toBe(true)
-    expect(searchPages(pages, 'release')).toEqual([])
+    const first = rev('notes', 'Release notes', 'the release notes')
+    const second = { ...first, id: 'gone', createdAt: 2000, parentRevs: ['notes'] }
+
+    const visible = buildPages([first, { ...second, tombstone: false }])
+    expect(visible[0].hidden).toBe(false)
+    expect(searchPages(visible, 'release').map((hit) => hit.page.slug)).toEqual(['notes'])
+
+    const hidden = buildPages([first, { ...second, tombstone: true }])
+    expect(hidden[0].hidden).toBe(true)
+    expect(searchPages(hidden, 'release')).toEqual([])
   })
 })
 

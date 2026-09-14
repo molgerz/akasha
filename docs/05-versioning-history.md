@@ -90,7 +90,7 @@ Features:
   NIP-09 `kind 5`, from that revision's row in the history. It is a *request*,
   and the UI says so: a relay may keep the event — the NIP-29 relay we run
   stores it without deleting anything — and copies on other relays and clients
-  remain. The client therefore keeps the revision as a tombstone: it is skipped
+  remain. The client therefore keeps the revision as deleted: it is skipped
   in the chain, the diff pickers and blame, while a successor whose
   `parent-rev` names it is re-pointed at the nearest surviving ancestor, so
   the chain does not tear. A request only removes the requester's own revision;

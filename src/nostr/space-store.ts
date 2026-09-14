@@ -336,8 +336,12 @@ class SpaceStore {
   /**
    * A NIP-09 request. It is kept as a deletion and re-applied on every rebuild,
    * so a revision that arrives after its request is still skipped and the
-   * tombstone is re-derived from the relay on the next round rather than
-   * living only in local state.
+   * removal is re-derived from the relay on the next round rather than living
+   * only in local state.
+   *
+   * "Tombstone" is deliberately not used for this: in this codebase that word
+   * belongs to `TAGS.TOMBSTONE`, a revision that hides its whole page, which is
+   * a different thing entirely. src/nostr/kinds.ts
    */
   private applyDeletion(event: Event): void {
     if (this.deletions.has(event.id)) return

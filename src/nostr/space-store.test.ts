@@ -384,7 +384,7 @@ describe('NIP-09 deletion requests', () => {
     unsubscribe()
   })
 
-  // The tombstone has to be re-derived from the relay, not kept in local state:
+  // The removal has to be re-derived from the relay, not kept in local state:
   // a rebuild clears everything collected, and only the re-delivered kind 5
   // brings the removal back.
   it('survives a rebuild when the kind 5 is delivered again', () => {

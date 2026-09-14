@@ -27,7 +27,7 @@
   relay-enforced permissions and full-text search.
 - **Deletion**: NIP-09 is a request. Once published, content may survive on
   copies. UI wording: "request deletion". The client honours a request only for
-  the requester's own revision, keeps the revision as a tombstone and skips it
+  the requester's own revision, keeps the revision as deleted and skips it
   in the chain, the diff and blame — the relay we run stores the `kind 5`
   but does not delete the revision, so a later read would otherwise show it
   again.

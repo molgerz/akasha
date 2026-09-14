@@ -32,7 +32,10 @@ export function HistoryView() {
   const [details, setDetails] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  // The notice carries its own title: this view has two flows that succeed in
+  // very different ways, and a fixed title would put a hide under a headline
+  // announcing a deletion — the one reading this page must not draw.
+  const [notice, setNotice] = useState<{ title: string; body: string } | null>(null)
   const hide = useHidePage(group?.relayUrl ?? '', group?.id ?? '')
 
   if (!group || !base || !slug) {
@@ -65,6 +68,22 @@ export function HistoryView() {
   const revisions = page.revisions
   const removedHere = space.removedRevisions.filter((revision) => revision.slug === page.slug)
 
+  /**
+   * Wipes what the previous action left on screen. The hide hook keeps its own
+   * error state, so clearing the local one is not enough — otherwise a failed
+   * hide stays in the callout while the next action reports its own result.
+   */
+  const clearFeedback = () => {
+    setError(null)
+    setNotice(null)
+    hide.setError(null)
+  }
+
+  // Two sources, one callout: the actions on this page report through local
+  // state, hiding reports through its hook. Only one of them can be set at a
+  // time, because every action clears both before it starts.
+  const shownError = error ?? hide.error
+
   const removeRevision = async (revision: Revision) => {
     if (session.status !== 'signed-in') return
     // The relay really enforces this deletion — so ask first.
@@ -72,8 +91,7 @@ export function HistoryView() {
       `Delete the revision from ${stamp(revision.createdAt)} on the relay? This cannot be undone.`,
     )
     if (!ok) return
-    setError(null)
-    setNotice(null)
+    clearFeedback()
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -114,8 +132,7 @@ export function HistoryView() {
         'their text.',
     )
     if (!ok) return
-    setError(null)
-    setNotice(null)
+    clearFeedback()
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -129,10 +146,12 @@ export function HistoryView() {
         revisionId: revision.id,
       })
       if (result.ok) {
-        setNotice(
-          'The deletion request reached the relay. It may keep the revision anyway; copies ' +
+        setNotice({
+          title: 'Deletion requested — not a guarantee',
+          body:
+            'The deletion request reached the relay. It may keep the revision anyway; copies ' +
             'on other relays and clients can remain.',
-        )
+        })
         return
       }
       const kind = classifyRejection(result.reason)
@@ -150,8 +169,7 @@ export function HistoryView() {
 
   const restore = async (revision: Revision) => {
     if (session.status !== 'signed-in') return
-    setError(null)
-    setNotice(null)
+    clearFeedback()
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -205,15 +223,22 @@ export function HistoryView() {
     if (!page.hidden) {
       if (!window.confirm(hideConfirmation(page, childSlugs(space.pages, page.slug).length))) return
     }
-    setError(null)
-    setNotice(null)
+    clearFeedback()
+    // The failure is *not* read back off `hide` here: this closure holds the
+    // hook's object from the render it was created in, and `setHidden` reports
+    // its error by setting state, which produces a new object rather than
+    // mutating that one. Reading `hide.error` after the await would therefore
+    // show the previous attempt's message, never the current one. The callout
+    // renders `hide.error` directly instead — the same way the sidebar renders
+    // `useMovePage`'s. src/ui/hide-page.ts
     const ok = await hide.setHidden(page, !page.hidden)
-    if (hide.error) setError(hide.error)
     if (ok && !page.hidden) {
-      setNotice(
-        'The page is out of the tree, the search and the overview. Its history is ' +
+      setNotice({
+        title: 'The page is removed — and can come back',
+        body:
+          'The page is out of the tree, the search and the overview. Its history is ' +
           'unchanged and this link still works — bring it back from here whenever you want.',
-      )
+      })
     }
   }
 
@@ -253,18 +278,18 @@ export function HistoryView() {
         {page.title}
       </PageTitle>
 
-      {error ? (
+      {shownError ? (
         <div className="mb-6">
           <Callout tone="danger" title="That did not work">
-            {error}
+            {shownError}
           </Callout>
         </div>
       ) : null}
 
       {notice ? (
         <div className="mb-6">
-          <Callout tone="warning" title="Deletion requested — not a guarantee">
-            {notice}
+          <Callout tone="warning" title={notice.title}>
+            {notice.body}
           </Callout>
         </div>
       ) : null}

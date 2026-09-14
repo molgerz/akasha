@@ -20,6 +20,11 @@ import type { Page } from '../domain/pages'
  * reversed, with a guard against a cycle: `page-parent` comes off the relay
  * from an arbitrary key, and two pages naming each other as parent would
  * otherwise loop here forever.
+ *
+ * A hidden parent ends the trail, exactly as it ends a branch in `buildTree`:
+ * the subpage is at the top level there, and a crumb leading into a page that
+ * is out of the tree would contradict the sidebar the reader is looking at.
+ * src/domain/pages.ts
  */
 function ancestors(pages: Page[], page: Page): Page[] {
   const chain: Page[] = []
@@ -28,7 +33,7 @@ function ancestors(pages: Page[], page: Page): Page[] {
   while (cursor && !seen.has(cursor)) {
     seen.add(cursor)
     const parent = pages.find((entry) => entry.slug === cursor)
-    if (!parent) break
+    if (!parent || parent.hidden) break
     chain.unshift(parent)
     cursor = parent.parentSlug
   }
