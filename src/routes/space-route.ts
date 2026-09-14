@@ -3,10 +3,10 @@ import { parseGroupAddress } from '../nostr/group-address'
 import type { GroupAddress } from '../nostr/group-address'
 import { useSpace } from '../nostr/space-store'
 import type { SpaceSnapshot } from '../nostr/space-store'
-import { DEFAULT_RELAY_URL } from '../nostr/relay-status'
 
 export type SpaceRoute = {
   group: GroupAddress | null
+  /** empty string when the address does not parse — there is no relay then */
   relayUrl: string
   space: SpaceSnapshot
   /** Base for links inside the space, e.g. /s/host'group */
@@ -22,7 +22,14 @@ export type SpaceRoute = {
 export function useSpaceRoute(): SpaceRoute {
   const params = useParams<{ group?: string; slug?: string }>()
   const group = params.group ? parseGroupAddress(params.group) : null
-  const relayUrl = group?.relayUrl ?? DEFAULT_RELAY_URL
+  // Deliberately no fall back to DEFAULT_RELAY_URL. An address that does not
+  // parse names no relay, and standing in the deployment's own relay for it
+  // was a connection nobody asked for — made, in the end, only so the view
+  // above could draw "Invalid group address." on top of it (CON-46). Every
+  // caller guards on `group` before it touches a relay, and `useSpace` with an
+  // empty group id subscribes to nothing, so the empty string never reaches a
+  // socket. docs/09-security-privacy.md
+  const relayUrl = group?.relayUrl ?? ''
   const space = useSpace(relayUrl, group?.id ?? '')
   return {
     group,

@@ -28,7 +28,12 @@ export type SpaceSnapshot = {
   comments: Comment[]
 }
 
-const EMPTY: SpaceSnapshot = {
+/**
+ * A space that holds nothing and is done loading. Exported because the shell
+ * needs something to draw its chrome around while it is deliberately *not*
+ * talking to a relay — see the Gate comment in src/ui/layout/AppShell.tsx.
+ */
+export const EMPTY_SPACE: SpaceSnapshot = {
   loading: true,
   metadata: null,
   admins: [],
@@ -45,7 +50,7 @@ const EMPTY: SpaceSnapshot = {
  * docs/02-data-model-events.md
  */
 class SpaceStore {
-  private snapshot: SpaceSnapshot = EMPTY
+  private snapshot: SpaceSnapshot = EMPTY_SPACE
   private listeners = new Set<() => void>()
   private revisions = new Map<string, Revision>()
   /** the winning placement per slug — src/domain/placement.ts */
@@ -123,8 +128,8 @@ class SpaceStore {
     this.comments.clear()
     this.metadataEvent = null
     this.groupEventAt.clear()
-    if (this.snapshot === EMPTY) return
-    this.snapshot = EMPTY
+    if (this.snapshot === EMPTY_SPACE) return
+    this.snapshot = EMPTY_SPACE
     for (const listener of this.listeners) listener()
   }
 
