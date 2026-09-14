@@ -226,7 +226,6 @@ As of 2026-09-07, found while comparing the docs against the code:
 | Hiding a whole page (tombstone) | [05](05-versioning-history.md) |
 | Writing `previous` timeline references | [02](02-data-model-events.md) |
 | Sidebar entries "all pages", "recently changed", "space settings" | [06](06-ui-information-architecture.md) |
-| Onboarding note that an npub is a permanent pseudonym | [09](09-security-privacy.md) |
 | Help editing a table — column-aware movement and alignment; the skeleton itself comes from the `/` menu | [13](13-editing.md) |
 
 ### Deliberately solved differently than planned
