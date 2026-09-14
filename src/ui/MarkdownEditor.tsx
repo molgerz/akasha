@@ -22,6 +22,7 @@ import { useTheme } from '../theme/theme'
 import { liveMarkdown } from './markdown-live'
 import { needsLineUnderTable } from './editor-table'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
+import { emojiOnTyping } from './editor-emoji-replace'
 import { slashInsertCompletion } from './editor-slash'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 
@@ -734,6 +735,7 @@ export function MarkdownEditor({
         }),
         syntaxHighlighting(codeHighlight),
         normaliseTaskMarker,
+        emojiOnTyping,
         liveMarkdown,
         autocompletion({
           override: [
