@@ -254,10 +254,39 @@ Consequences worth knowing:
   it avoids carrying a key from a level where it meant something else.
 - Two pages whose titles normalise identically compare equal; the slug breaks
   the tie, so every client shows the same order.
-- **Open:** the order is per page, so a *level* cannot be sorted in one go, and
-  reordering needs a signature per page moved.
-- **Open:** nothing cleans up the placement of a deleted page. A `31818` whose
-  slug has no revisions is ignored, so it is inert rather than harmful.
+- **A whole level can be sorted in one action (CON-21).** The order is still
+  per page, and there is no batch signing in NIP-07 — so the way out is not a
+  bigger event but a smaller one: **"Sort by title" clears the keys** instead of
+  computing new ones, because a page without a key is ordered by its title
+  anyway. Only the pages that actually carry one are rewritten, and the first
+  refusal stops the run (a half-sorted level is worse than an unsorted one).
+
+  Handing out fresh keys `a`, `b`, `c` … would have been the obvious
+  implementation and is worse in every way: an event per page instead of only
+  the ones that need it, and today's alphabet frozen into the data, so a later
+  rename would no longer move the page.
+
+  It lives in the space settings under *Page tree*, not on every branch row:
+  re-sorting a level is rare, and a control on every row would be permanent
+  weight for it.
+- **A placement whose page is gone can be cleaned up (CON-21).** It was inert
+  rather than harmful, and that is exactly why it needed somewhere to be seen —
+  nothing else in the app would ever mention it. The settings page lists them
+  and asks the relay to drop them with a NIP-09 `kind 5` naming the **address**
+  (`31818:<pubkey>:<d>`), the only way to name an addressable event: every move
+  replaces the placement, so an event id points at a version that may already
+  be gone.
+
+  Two gates, both ours because the relay enforces neither: the request counts
+  only from the placement's **own author** (an addressable event is identified
+  per author, and a relay honours nobody else's request), and only for a slug
+  with **no revisions** — so a stale request cannot silently unplace a page
+  that came back. A placement somebody else left behind stays theirs to remove,
+  and the UI says so instead of offering a button that would do nothing.
+
+  Our relay stores the `kind 5` without deleting anything, the same as for a
+  revision ([05](05-versioning-history.md)), so the client stops counting them
+  while the events themselves may remain.
 
 ## No NIP-54 mirror (`30818`) — decided against
 

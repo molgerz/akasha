@@ -436,3 +436,111 @@ describe('NIP-09 deletion requests', () => {
     unsubscribe()
   })
 })
+
+/** A `31818` placement for a slug. */
+function placement(id: string, slug: string, pubkey = 'alice', parent: string | null = null): Event {
+  return {
+    id,
+    pubkey,
+    created_at: 1500,
+    kind: KINDS.PAGE_PLACEMENT,
+    tags: [['h', GROUP], ['d', slug], ...(parent ? [['page-parent', parent]] : [])],
+    content: '',
+    sig: 'sig',
+  } as Event
+}
+
+/** A NIP-09 request naming a placement by its address. */
+function placementDeletion(id: string, pubkey: string, slug: string, owner = pubkey): Event {
+  return {
+    id,
+    pubkey,
+    created_at: 2500,
+    kind: KINDS.DELETION_REQUEST,
+    tags: [
+      ['h', GROUP],
+      ['k', String(KINDS.PAGE_PLACEMENT)],
+      ['a', `${KINDS.PAGE_PLACEMENT}:${owner}:${slug}`],
+    ],
+    content: '',
+    sig: 'sig',
+  } as Event
+}
+
+/**
+ * A placement whose page was deleted out from under it. It is ignored when the
+ * tree is built, so nothing in the app would ever mention it — which is why
+ * the store has to surface it, and why the rules for taking it out have to be
+ * pinned: the relay enforces none of them.
+ */
+describe('orphaned placements', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    relay.subs = []
+    relay.epoch = 1
+    relay.auth = 'ok'
+    relay.ready = true
+    clearAllSpaces()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('reports a placement whose slug has no revisions, and no others', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    deliver(revision('e1', 'onboarding'))
+    deliver(placement('p1', 'onboarding'))
+    deliver(placement('p2', 'vanished'))
+
+    expect(store.getSnapshot().orphanPlacements.map((entry) => entry.slug)).toEqual(['vanished'])
+    unsubscribe()
+  })
+
+  it('stops reporting one its own author asked to have removed', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    deliver(placement('p2', 'vanished', 'alice'))
+    expect(store.getSnapshot().orphanPlacements).toHaveLength(1)
+
+    deliver(placementDeletion('d1', 'alice', 'vanished'))
+    expect(store.getSnapshot().orphanPlacements).toEqual([])
+    unsubscribe()
+  })
+
+  it("ignores a request from anyone but the placement's own author", () => {
+    // An addressable event is identified per author, and a relay would honour
+    // nobody else's request either. The gate is ours because it enforces none.
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    deliver(placement('p2', 'vanished', 'alice'))
+    deliver(placementDeletion('d1', 'mallory', 'vanished', 'alice'))
+
+    expect(store.getSnapshot().orphanPlacements).toHaveLength(1)
+    unsubscribe()
+  })
+
+  it('does not unplace a page that came back after the request', () => {
+    // The claim is not that the count goes to zero — it would either way once
+    // the slug has revisions. It is that the placement still *applies*: a
+    // stale request must not silently move a live page to the top level.
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    deliver(placement('p1', 'onboarding', 'alice', 'handbook'))
+    deliver(placementDeletion('d1', 'alice', 'onboarding'))
+    expect(store.getSnapshot().orphanPlacements).toEqual([])
+
+    deliver(revision('e0', 'handbook'))
+    deliver(revision('e1', 'onboarding'))
+
+    const page = store.getSnapshot().pages.find((entry) => entry.slug === 'onboarding')
+    expect(page?.parentSlug).toBe('handbook')
+    expect(store.getSnapshot().orphanPlacements).toEqual([])
+    unsubscribe()
+  })
+})

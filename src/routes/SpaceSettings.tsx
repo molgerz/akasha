@@ -7,6 +7,7 @@ import { classifyRejection } from '../nostr/client'
 import { APP_CONTENT_KINDS } from '../nostr/kinds'
 import { SignInButton } from '../ui/SignInButton'
 import { MemberAdmin } from '../ui/MemberAdmin'
+import { PageTreeMaintenance } from '../ui/PageTreeMaintenance'
 import { PageFrame, PageTitle } from '../ui/layout/PageFrame'
 import { Button, Callout, INPUT, TEXTAREA } from '../ui/controls'
 
@@ -194,6 +195,15 @@ export function SpaceSettings() {
           </Callout>
         </div>
       ) : null}
+
+      <div className="mt-10 max-w-lg border-t border-line pt-8">
+        <PageTreeMaintenance
+          relayUrl={group.relayUrl}
+          groupId={group.id}
+          pages={space.pages}
+          orphanPlacements={space.orphanPlacements}
+        />
+      </div>
 
       <div className="mt-10 max-w-lg border-t border-line pt-8">
         <MemberAdmin

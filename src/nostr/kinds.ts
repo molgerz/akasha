@@ -108,6 +108,12 @@ export const TAGS = {
   DELETED_EVENT: 'e',
   /** NIP-09: kind of the events a deletion request targets */
   DELETED_KIND: 'k',
+  /**
+   * NIP-09: the address of an *addressable* event a deletion request targets,
+   * as `<kind>:<pubkey>:<d>`. A placement (`31818`) has no id worth naming —
+   * every move replaces it — so it can only be asked for by address.
+   */
+  DELETED_ADDRESS: 'a',
   /** Content type, always text/markdown here */
   MIME: 'm',
   /** NIP-31: fallback description for foreign clients */

@@ -30,6 +30,7 @@ describe('parseDeletion', () => {
       createdAt: 1000,
       group: 'engineering',
       targets: [TARGET],
+      addresses: [],
     })
   })
 
@@ -88,6 +89,42 @@ describe('parseDeletion', () => {
   })
 
   it('rejects a request that names no target', () => {
+    expect(parseDeletion(event({ tags: [[TAGS.GROUP, 'engineering']] }), 'engineering')).toBeNull()
+  })
+
+  it('reads an address target, the only way to name a placement', () => {
+    // A placement is replaced by every move, so an event id points at a
+    // version that may already be gone. NIP-09 names it by address instead.
+    const address = `${KINDS.PAGE_PLACEMENT}:alice:onboarding`
+    const deletion = parseDeletion(
+      event({
+        tags: [
+          [TAGS.GROUP, 'engineering'],
+          [TAGS.DELETED_ADDRESS, address],
+          [TAGS.DELETED_KIND, String(KINDS.PAGE_PLACEMENT)],
+        ],
+      }),
+      'engineering',
+    )
+    expect(deletion?.addresses).toEqual([address])
+    expect(deletion?.targets).toEqual([])
+  })
+
+  it('still refuses a request that names only kinds of ours', () => {
+    const foreign = parseDeletion(
+      event({
+        tags: [
+          [TAGS.GROUP, 'engineering'],
+          [TAGS.DELETED_EVENT, TARGET],
+          [TAGS.DELETED_KIND, '1'],
+        ],
+      }),
+      'engineering',
+    )
+    expect(foreign).toBeNull()
+  })
+
+  it('refuses a request that names nothing at all', () => {
     expect(parseDeletion(event({ tags: [[TAGS.GROUP, 'engineering']] }), 'engineering')).toBeNull()
   })
 })

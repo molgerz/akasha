@@ -48,6 +48,7 @@ function snapshot(name: string, admins: string[]): SpaceSnapshot {
     tree: [],
     comments: [],
     removedRevisions: [],
+    orphanPlacements: [],
   }
 }
 

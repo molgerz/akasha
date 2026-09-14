@@ -30,6 +30,14 @@ export type SpaceSnapshot = {
   comments: Comment[]
   /** revisions their author asked the relay to delete, newest first */
   removedRevisions: Revision[]
+  /**
+   * Placements whose slug has no revisions at all: the page they position was
+   * deleted out from under them. A `31818` like this is ignored when the tree
+   * is built, so it is inert rather than harmful — but it is still an event
+   * sitting on the relay saying where a page that does not exist should hang.
+   * docs/02-data-model-events.md
+   */
+  orphanPlacements: Placement[]
 }
 
 const EMPTY: SpaceSnapshot = {
@@ -41,6 +49,7 @@ const EMPTY: SpaceSnapshot = {
   tree: [],
   comments: [],
   removedRevisions: [],
+  orphanPlacements: [],
 }
 
 /**
@@ -142,7 +151,41 @@ class SpaceStore {
     const removedRevisions = revisions
       .filter((revision) => deleted.has(revision.id))
       .sort((a, b) => b.createdAt - a.createdAt)
-    this.emit({ pages, tree: buildTree(pages), removedRevisions })
+
+    const slugsWithRevisions = new Set(revisions.map((revision) => revision.slug))
+    const droppedPlacements = this.droppedPlacements(slugsWithRevisions)
+    const orphanPlacements = [...this.placements.values()].filter(
+      (placement) =>
+        !slugsWithRevisions.has(placement.slug) && !droppedPlacements.has(placement.slug),
+    )
+
+    this.emit({ pages, tree: buildTree(pages), removedRevisions, orphanPlacements })
+  }
+
+  /**
+   * Slugs whose placement a NIP-09 address request has taken out.
+   *
+   * Two gates, both ours because the relay enforces neither. The request only
+   * counts **from the placement's own author** — an addressable event is
+   * identified per author, and a relay would honour nobody else's. And it only
+   * counts for a slug that has **no revisions**: that is the orphan case this
+   * is for, and it is the only one where dropping the placement cannot move a
+   * page somebody is looking at. A stale request against a page that came back
+   * must not silently unplace it.
+   */
+  private droppedPlacements(slugsWithRevisions: Set<string>): Set<string> {
+    const dropped = new Set<string>()
+    for (const deletion of this.deletions.values()) {
+      for (const address of deletion.addresses) {
+        const [kind, pubkey, slug] = address.split(':')
+        if (kind !== String(KINDS.PAGE_PLACEMENT) || !slug) continue
+        if (pubkey !== deletion.author) continue
+        if (slugsWithRevisions.has(slug)) continue
+        if (this.placements.get(slug)?.author !== deletion.author) continue
+        dropped.add(slug)
+      }
+    }
+    return dropped
   }
 
   /**

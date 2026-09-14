@@ -14,6 +14,12 @@ export type Deletion = {
   group: string | null
   /** event ids the request names */
   targets: string[]
+  /**
+   * Addresses the request names, as `<kind>:<pubkey>:<d>`. An addressable
+   * event has no id worth naming — a placement is replaced by every move — so
+   * this is the only way to ask for one. NIP-09.
+   */
+  addresses: string[]
 }
 
 function tagValues(event: Event, name: string): string[] {
@@ -24,8 +30,8 @@ function tagValues(event: Event, name: string): string[] {
 
 /**
  * Turns an event into a deletion request. Returns null for anything that is not
- * a kind 5 about page revisions in this group: a foreign `h`, or a `k` that
- * names another kind, means the request is not ours to honour.
+ * a kind 5 about this group's page revisions or placements: a foreign `h`, or
+ * a `k` that names only other kinds, means the request is not ours to honour.
  *
  * The `h` tag is tolerated as absent — NIP-09 does not define it, and a
  * client that sends one without it is still asking about a revision. The
@@ -40,10 +46,12 @@ export function parseDeletion(event: Event, expectedGroup: string): Deletion | n
   if (group && group !== expectedGroup) return null
 
   const kinds = tagValues(event, TAGS.DELETED_KIND)
-  if (kinds.length > 0 && !kinds.includes(String(KINDS.PAGE_REVISION))) return null
+  const ours = [String(KINDS.PAGE_REVISION), String(KINDS.PAGE_PLACEMENT)]
+  if (kinds.length > 0 && !kinds.some((kind) => ours.includes(kind))) return null
 
   const targets = tagValues(event, TAGS.DELETED_EVENT)
-  if (targets.length === 0) return null
+  const addresses = tagValues(event, TAGS.DELETED_ADDRESS)
+  if (targets.length === 0 && addresses.length === 0) return null
 
   return {
     id: event.id,
@@ -51,5 +59,6 @@ export function parseDeletion(event: Event, expectedGroup: string): Deletion | n
     createdAt: event.created_at,
     group,
     targets,
+    addresses,
   }
 }

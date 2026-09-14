@@ -73,7 +73,7 @@ backlog, see [docs/10](docs/10-roadmap.md).
 | [NIP-31](https://github.com/nostr-protocol/nips/blob/master/31.md) `alt` | ✅ | Plain-text description on our own kinds so foreign clients can show something | `src/nostr/publish-page.ts` |
 | [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) AUTH | ✅ | Authenticating to the relay, automatically on every new connection, retried after `auth-required` | `src/nostr/client.ts` |
 | [Blossom](https://github.com/hzrd149/blossom) BUD-01/02 | ✅ | Attachments: the blob lives on the server under its sha256, the event only holds the URL | `src/nostr/blossom.ts` |
-| [NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md) deletion request | ⚠️ | A user asks for their *own* revision (`kind 5`). The NIP-29 relay stores the request but does not delete, so the client skips the revision as a tombstone and reconnects the chain. Admin deletion stays `9005`, which the relay enforces | `src/domain/deletion.ts`, `src/nostr/publish-deletion.ts` |
+| [NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md) deletion request | ⚠️ | A user asks for their *own* revision (`kind 5`), or for a placement left behind by a deleted page (by `a` address). The NIP-29 relay stores the request but does not delete, so the client skips them itself — a revision as a tombstone with the chain reconnected around it, a placement by no longer counting it. Admin deletion stays `9005`, which the relay enforces | `src/domain/deletion.ts`, `src/nostr/publish-deletion.ts` |
 | [NIP-46](https://github.com/nostr-protocol/nips/blob/master/46.md) bunker | ❌ | Planned as a second signer implementation behind the same interface | — |
 | [NIP-50](https://github.com/nostr-protocol/nips/blob/master/50.md) search | ❌ | Deliberately not: not every relay supports it, and a relay-dependent search would break offline. Search runs locally | `src/domain/search.ts` |
 | [NIP-54](https://github.com/nostr-protocol/nips/blob/master/54.md) wiki | ⚠️ | Its slug normalisation for the `d` tag, rule for rule. The wiki kinds themselves are deliberately unused — see below | `src/nostr/kinds.ts` |
@@ -109,7 +109,7 @@ backlog, see [docs/10](docs/10-roadmap.md).
 | **39002** members | ✅ | Member list |
 | **39003** role definitions | ❌ | Not evaluated |
 | **30818** wiki article | ❌ | Deliberately not, see "Deviations and limits" |
-| **5** deletion request | ✅ | The author's own revision; the client skips it (see NIP-09 above) |
+| **5** deletion request | ✅ | The author's own revision, named by `e`; and a stale placement, named by `a` (`31818:<pubkey>:<d>`) — an addressable event has no id worth naming. The client skips both (see NIP-09 above) |
 | **9021** join | ❌ | Unnecessary in open groups: the relay adds the author on their first write. The fallback for stricter relays is still missing |
 
 * * *
