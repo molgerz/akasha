@@ -1,3 +1,6 @@
+import { useCallback, useState } from 'react'
+import { useSession } from '../session/session'
+
 const STORAGE_KEY = 'nc-pseudonym-ack'
 
 /**
@@ -31,4 +34,41 @@ export function acknowledge(pubkey: string): Set<string> {
     /* then it only applies to this session */
   }
   return next
+}
+
+export type PseudonymNoticeState = {
+  /** whether the dialog is up — the shell reads this to go `inert` behind it */
+  open: boolean
+  npub: string | null
+  /** the deliberate act: records this npub as told, for good */
+  confirm: () => void
+  /** the way out that spends nothing: gone for this session, back on the next load */
+  defer: () => void
+}
+
+/**
+ * Whether this npub still has to be told, and the two ways out.
+ *
+ * It lives beside the storage rather than in `PseudonymNotice.tsx` because two
+ * places need it: the dialog draws it, and the shell has to know it is up in
+ * order to make everything behind it `inert`.
+ */
+export function usePseudonymNotice(): PseudonymNoticeState {
+  const { session } = useSession()
+  const pubkey = session.status === 'signed-in' ? session.pubkey : null
+  const npub = session.status === 'signed-in' ? session.npub : null
+
+  const [acknowledged, setAcknowledged] = useState(readAcknowledged)
+  const [deferred, setDeferred] = useState<string | null>(null)
+
+  const open = pubkey !== null && !acknowledged.has(pubkey) && deferred !== pubkey
+
+  const confirm = useCallback(() => {
+    if (!pubkey) return
+    setAcknowledged(acknowledge(pubkey))
+  }, [pubkey])
+
+  const defer = useCallback(() => setDeferred(pubkey), [pubkey])
+
+  return { open, npub, confirm, defer }
 }

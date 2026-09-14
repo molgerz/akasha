@@ -84,3 +84,13 @@ same machine, or the same person starting a deliberately unlinked second
 pseudonym, has not been told anything. There is still no onboarding *page* — the
 app has no sign-in page either, on purpose (docs/06), so the notice goes to the
 reader instead of the reader to it.
+
+Only the button acknowledges. Escape closes the dialog — a dialog the keyboard
+cannot leave is its own accessibility problem — but records nothing, so the
+notice is back on the next load; and the dialog itself takes the focus rather
+than its button, so Enter has nothing to activate. There is one warning per npub
+and nothing in the app brings it back, which is the whole reason a reflex must
+not be able to spend it. While it is up the rest of the shell is `inert`
+(`src/ui/layout/AppShell.tsx`): nothing behind the backdrop is focusable, which
+is also what stops the top bar's Ctrl/Cmd+K from putting the caret into a search
+field the reader cannot see.

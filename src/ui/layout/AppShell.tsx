@@ -3,6 +3,7 @@ import { Outlet, useLocation, useParams } from 'react-router-dom'
 import { Topbar } from './Topbar'
 import { SessionNotice } from '../SessionNotice'
 import { PseudonymNotice } from '../PseudonymNotice'
+import { usePseudonymNotice } from '../pseudonym-ack'
 import { Sidebar } from './Sidebar'
 import { TableOfContents } from './TableOfContents'
 import { TocProvider, useTocMarkdown } from './toc-context'
@@ -64,57 +65,70 @@ function Shell() {
 
   const base = group ? `/s/${encodeURIComponent(`${group.host}'${group.id}`)}` : null
 
+  const notice = usePseudonymNotice()
+
   return (
     <div className="flex h-full flex-col bg-surface-1">
-      <Topbar
-        groupBase={base}
-        snapshot={snapshot}
-        info={info}
-        columnHidden={collapsed}
-        onToggleColumn={toggleColumn}
-        overlayOpen={overlay}
-        onToggleOverlay={() => setOverlay((open) => !open)}
-      />
-      <SessionNotice />
-      <PseudonymNotice />
+      {/* `contents`, so the wrapper adds no box and the layout below is
+          unchanged — it exists only to carry `inert` for the one dialog that
+          may not be worked around. `inert` rather than a focus trap because it
+          does all three jobs at once: nothing behind the backdrop takes focus
+          (including the top bar's Ctrl/Cmd+K, which would otherwise type into
+          a search field the reader cannot see), nothing is tabbable, and the
+          whole shell leaves the accessibility tree while the notice is up. */}
+      <div className="contents" inert={notice.open}>
+        <Topbar
+          groupBase={base}
+          snapshot={snapshot}
+          info={info}
+          columnHidden={collapsed}
+          onToggleColumn={toggleColumn}
+          overlayOpen={overlay}
+          onToggleOverlay={() => setOverlay((open) => !open)}
+        />
+        <SessionNotice />
 
-      <div className="relative flex min-h-0 flex-1">
-        {/* Folded away entirely rather than down to a 40px rail of icons. The
-            rail had one thing in it that could not be reached elsewhere, the
-            relay status — that now sits in the top bar, where it is visible
-            whether the bar is open or not. A strip holding a single dot is
-            not a narrow sidebar, it is a margin.
-            docs/06-ui-information-architecture.md */}
-        {collapsed ? null : (
-          <div className="hidden md:flex">
-            <Sidebar group={group} space={space} snapshot={snapshot} info={info} inSettings={inSettings} />
-          </div>
-        )}
-
-        {overlay ? (
-          <>
-            <button
-              type="button"
-              aria-label="Close menu"
-              onClick={() => setOverlay(false)}
-              className="fixed inset-0 z-20 bg-black/40 md:hidden"
-            />
-            <div className="fixed inset-y-0 left-0 z-30 flex md:hidden">
+        <div className="relative flex min-h-0 flex-1">
+          {/* Folded away entirely rather than down to a 40px rail of icons. The
+              rail had one thing in it that could not be reached elsewhere, the
+              relay status — that now sits in the top bar, where it is visible
+              whether the bar is open or not. A strip holding a single dot is
+              not a narrow sidebar, it is a margin.
+              docs/06-ui-information-architecture.md */}
+          {collapsed ? null : (
+            <div className="hidden md:flex">
               <Sidebar group={group} space={space} snapshot={snapshot} info={info} inSettings={inSettings} />
             </div>
-          </>
-        ) : null}
+          )}
 
-        {/* The canvas. Rounded and inset on the left where it meets the bar, so
-            the document sits *on* the chrome instead of being walled off from
-            it by a hairline — the one detail that turns three panels into one
-            surface. */}
-        <main className="min-w-0 flex-1 overflow-auto scroll-slim border-t border-l border-line bg-surface-2 md:rounded-tl-xl">
-          <Outlet />
-        </main>
+          {overlay ? (
+            <>
+              <button
+                type="button"
+                aria-label="Close menu"
+                onClick={() => setOverlay(false)}
+                className="fixed inset-0 z-20 bg-black/40 md:hidden"
+              />
+              <div className="fixed inset-y-0 left-0 z-30 flex md:hidden">
+                <Sidebar group={group} space={space} snapshot={snapshot} info={info} inSettings={inSettings} />
+              </div>
+            </>
+          ) : null}
 
-        <TableOfContents markdown={tocMarkdown} />
+          {/* The canvas. Rounded and inset on the left where it meets the bar, so
+              the document sits *on* the chrome instead of being walled off from
+              it by a hairline — the one detail that turns three panels into one
+              surface. */}
+          <main className="min-w-0 flex-1 overflow-auto scroll-slim border-t border-l border-line bg-surface-2 md:rounded-tl-xl">
+            <Outlet />
+          </main>
+
+          <TableOfContents markdown={tocMarkdown} />
+        </div>
       </div>
+
+      {/* Outside the `inert` wrapper — it is the only thing that stays live. */}
+      <PseudonymNotice notice={notice} />
     </div>
   )
 }

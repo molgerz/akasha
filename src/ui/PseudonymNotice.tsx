@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useSession } from '../session/session'
+import { useEffect, useRef } from 'react'
 import { Button } from './controls'
-import { acknowledge, readAcknowledged } from './pseudonym-ack'
+import type { PseudonymNoticeState } from './pseudonym-ack'
 
 /**
  * What an npub costs, said once, before the first revision is written under it.
@@ -21,31 +20,39 @@ import { acknowledge, readAcknowledged } from './pseudonym-ack'
  * It appears on a resumed session too, not only on a fresh `login()` click.
  * The question the storage answers is "has this npub been told", and somebody
  * who was already signed in when this shipped has not been.
+ *
+ * The state comes in from `usePseudonymNotice` rather than being read here,
+ * because the shell needs the one bit this dialog knows: while it is up,
+ * everything behind it is `inert`. A dialog that says `aria-modal` while the
+ * page behind it still takes focus is lying to a screen reader — and
+ * concretely, the top bar's Ctrl/Cmd+K would otherwise put the caret in a
+ * search field hidden under the backdrop.
  */
-export function PseudonymNotice() {
-  const { session } = useSession()
-  const pubkey = session.status === 'signed-in' ? session.pubkey : null
-  const npub = session.status === 'signed-in' ? session.npub : null
+export function PseudonymNotice({ notice }: { notice: PseudonymNoticeState }) {
+  const { open, npub, confirm, defer } = notice
+  const dialog = useRef<HTMLDivElement>(null)
 
-  const [acknowledged, setAcknowledged] = useState(readAcknowledged)
-
-  const open = pubkey !== null && !acknowledged.has(pubkey)
-
-  const dismiss = useCallback(() => {
-    if (!pubkey) return
-    setAcknowledged(acknowledge(pubkey))
-  }, [pubkey])
-
-  // Escape closes it like any other dialog. It is a notice, not a consent
-  // form: there is nothing to withhold, so the two ways out do the same thing.
+  // Escape closes it, because a dialog a keyboard cannot leave is its own
+  // accessibility problem — but it does *not* record the npub as told. Escape
+  // is the trained reflex for making a dialog go away, and the app has exactly
+  // one warning per npub to spend; a reflex must not be able to spend it. So
+  // this way out lasts until the next load, and only the button is final.
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss()
+      if (event.key === 'Escape') defer()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, dismiss])
+  }, [open, defer])
+
+  // The dialog takes the focus, not its button. A screen reader then reads the
+  // label and the three sentences it is described by, and — the reason it is
+  // not `autoFocus` on the button any more — Enter has nothing to activate.
+  // One keystroke on a focused "I understand" is as reflexive as Escape.
+  useEffect(() => {
+    if (open) dialog.current?.focus()
+  }, [open])
 
   if (!open) return null
 
@@ -55,21 +62,24 @@ export function PseudonymNotice() {
     // the sentence above was read.
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
       <div
+        ref={dialog}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="pseudonym-notice-title"
-        className="max-h-full w-full max-w-lg overflow-auto scroll-slim rounded-lg border border-line bg-surface-2 p-6 shadow-lg"
+        aria-describedby="pseudonym-notice-body"
+        className="max-h-full w-full max-w-lg overflow-auto scroll-slim rounded-lg border border-line bg-surface-2 p-6 shadow-lg outline-none"
       >
         <h2 id="pseudonym-notice-title" className="text-base font-semibold text-fg">
           Your npub is a permanent pseudonym
         </h2>
 
-        <div className="mt-3 space-y-3 text-sm text-fg-muted">
+        <div id="pseudonym-notice-body" className="mt-3 space-y-3 text-sm text-fg-muted">
           <p>
             Every revision you save is signed with your key and carries your npub. It stays
             attached to what you wrote — across every page, every space and every relay that
-            ever holds a copy. Anyone who learns once which npub is you can read back
-            everything it has ever written.
+            ever holds a copy. Anyone who can reach those copies and learns once which npub
+            is you can read back everything it has written.
           </p>
           <p>
             Publishing cannot reliably be undone. Deleting is a request to the relay, not a
@@ -87,10 +97,7 @@ export function PseudonymNotice() {
         </div>
 
         <div className="mt-5 flex justify-end">
-          {/* The button, not the dialog, takes the focus: a screen reader
-              then reads the dialog's label and its one action, and Enter
-              dismisses it without a tab. */}
-          <Button autoFocus variant="primary" onClick={dismiss}>
+          <Button variant="primary" onClick={confirm}>
             I understand
           </Button>
         </div>
