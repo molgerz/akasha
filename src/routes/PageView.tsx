@@ -164,6 +164,28 @@ export function PageView() {
       <div className="flex-1">
         <PageTitle below={<Byline revision={page.head} />}>{page.title}</PageTitle>
 
+        {/* A page that is out of the tree still answers its own URL, so the
+            one place somebody can learn it was removed is the page itself.
+            Above the fork notice: "this page is gone from the space" outranks
+            "it has two versions". */}
+        {page.hidden ? (
+          <div className="mb-6">
+            <Callout
+              tone="warning"
+              title="This page was removed from the space"
+              actions={
+                <ButtonLink to={`${base}/${page.slug}/history`} size="sm">
+                  History and restore
+                </ButtonLink>
+              }
+            >
+              It is out of the page tree, the search and the overview, so nobody will come
+              across it — but nothing was deleted, and this link keeps working for everyone
+              who has it.
+            </Callout>
+          </div>
+        ) : null}
+
         {forked ? (
           <div className="mb-6">
             <Callout

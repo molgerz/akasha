@@ -12,6 +12,8 @@ import { publishRevisionDeletion } from '../nostr/publish-deletion'
 import { classifyRejection } from '../nostr/client'
 import { deleteGroupEvent } from '../nostr/moderation'
 import { forgetEvent } from '../nostr/space-store'
+import { hideConfirmation, useHidePage } from '../ui/hide-page'
+import { childSlugs } from '../domain/pages'
 import type { Revision } from '../domain/revision'
 import { PageFrame, PageTitle } from '../ui/layout/PageFrame'
 import { Button, Callout, Card, IconButtonLink, SectionLabel } from '../ui/controls'
@@ -31,6 +33,7 @@ export function HistoryView() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const hide = useHidePage(group?.relayUrl ?? '', group?.id ?? '')
 
   if (!group || !base || !slug) {
     return (
@@ -192,6 +195,28 @@ export function HistoryView() {
     }
   }
 
+  /**
+   * Removing the page, and bringing it back. A page-level action, so it sits
+   * in the view that is already about this page's lifecycle rather than among
+   * the navigation icons on the page itself. src/ui/hide-page.ts
+   */
+  const toggleHidden = async () => {
+    if (session.status !== 'signed-in') return
+    if (!page.hidden) {
+      if (!window.confirm(hideConfirmation(page, childSlugs(space.pages, page.slug).length))) return
+    }
+    setError(null)
+    setNotice(null)
+    const ok = await hide.setHidden(page, !page.hidden)
+    if (hide.error) setError(hide.error)
+    if (ok && !page.hidden) {
+      setNotice(
+        'The page is out of the tree, the search and the overview. Its history is ' +
+          'unchanged and this link still works — bring it back from here whenever you want.',
+      )
+    }
+  }
+
   const option = (revision: Revision) => (
     <>
       {stamp(revision.createdAt)} · <AuthorName pubkey={revision.author} />
@@ -240,6 +265,25 @@ export function HistoryView() {
         <div className="mb-6">
           <Callout tone="warning" title="Deletion requested — not a guarantee">
             {notice}
+          </Callout>
+        </div>
+      ) : null}
+
+      {page.hidden ? (
+        <div className="mb-6">
+          <Callout
+            tone="warning"
+            title="This page is removed from the space"
+            actions={
+              session.status === 'signed-in' ? (
+                <Button size="sm" disabled={busy || hide.busy} onClick={() => void toggleHidden()}>
+                  Bring the page back
+                </Button>
+              ) : null
+            }
+          >
+            It is out of the page tree, the search and the overview. Nothing was deleted: the
+            history below is complete, and anyone holding the link still reads the page.
           </Callout>
         </div>
       ) : null}
@@ -406,6 +450,30 @@ export function HistoryView() {
           })}
         </ol>
       </section>
+
+      {/* At the foot, not in the actions bar. Removing a page is a page-level
+          action and belongs in the view about this page's lifecycle — but it
+          is also the one destructive thing here, and it has no business
+          sitting next to the navigation icons somebody reaches for to get
+          back to reading. */}
+      {session.status === 'signed-in' && !page.hidden ? (
+        <section className="mt-12 border-t border-line pt-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy || hide.busy}
+              onClick={() => void toggleHidden()}
+            >
+              Remove this page
+            </Button>
+            <p className="text-xs text-fg-subtle">
+              Takes it out of the tree, the search and the overview. Nothing is deleted — the
+              history stays, the link keeps working, and you can bring it back from here.
+            </p>
+          </div>
+        </section>
+      ) : null}
     </PageFrame>
   )
 }

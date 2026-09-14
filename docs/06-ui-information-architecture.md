@@ -151,6 +151,13 @@ suffocates in a column that narrow, so it gets `max-w-4xl`.
    marker, but amber and *after* the title — otherwise it would read as the leaf
    dot. Each level indents by 14px.
 
+   A **hidden page** (a tombstone revision, [05](05-versioning-history.md)) is
+   not drawn here at all, and neither is it in the search or the space
+   overview — those three are the navigation. Its subpages come up to the top
+   level rather than vanishing with it, by the same rule that catches a missing
+   parent. The page itself still answers its own URL, and says on the page that
+   it was removed.
+
    Which branches are folded is kept in `localStorage`. Deliberately the
    *folded* ones rather than the open ones, otherwise a page created later would
    stay hidden until somebody expanded its parent. The branch leading to the

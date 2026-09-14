@@ -264,6 +264,11 @@ export function descendantSlugs(pages: Page[], slug: string): Set<string> {
   return found
 }
 
+/** The direct children of `slug`, whatever their own visibility. */
+export function childSlugs(pages: Page[], slug: string): string[] {
+  return pages.filter((page) => page.parentSlug === slug).map((page) => page.slug)
+}
+
 /** Whether `slug` may become a child of `targetSlug`. null = top level. */
 export function canMoveUnder(pages: Page[], slug: string, targetSlug: string | null): boolean {
   if (targetSlug === null) return true

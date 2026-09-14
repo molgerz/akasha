@@ -95,8 +95,34 @@ Features:
   `parent-rev` names it is re-pointed at the nearest surviving ancestor, so
   the chain does not tear. A request only removes the requester's own revision;
   the relay enforces nothing here. See also the admin path below.
-- **Open:** hiding a whole page — a new revision with a tombstone tag plus
-  `9005` on the predecessors, so that sidebar and search leave it out.
+- **Implemented:** hiding a whole page, from the foot of its history. A new
+  revision carries the `tombstone` tag and the page leaves the tree, the search
+  and the space overview. It is a step in the chain, not a deletion — nothing
+  is removed, and publishing a later revision without the tag brings the page
+  back, so "restore" needs no mechanism of its own.
+
+  The plan here used to add `9005` on the predecessors. That is dropped: it
+  would destroy the history of a page somebody may want back, to hide a page
+  that is already hidden by the tombstone. Consequences worth knowing, because
+  each is easy to assume the other way round:
+
+  - **The page still answers its own URL.** It is out of the *navigation*, so
+    nobody comes across it — but the link keeps working for everyone who has
+    it, and `PageView` says so on the page rather than letting a reader assume
+    otherwise. Hiding is not access control; a private space is
+    ([09](09-security-privacy.md)).
+  - **The head decides.** `Page.hidden` is read off the head revision, so on a
+    fork the newer leaf wins — the same rule that already decides which text
+    is shown, rather than a second one nobody could predict.
+  - **Subpages stay.** They come up to the top level by the rule `buildTree`
+    already applies to a missing parent. Hiding a page is a statement about
+    that page; taking a branch off screen would remove pages nobody asked to
+    remove.
+  - **The placement (`31818`) is left alone.** It has no effect while the page
+    is out of the tree, and deleting it would make a restore land the page
+    wherever its title sorts instead of where it was. The genuinely orphaned
+    case — a placement whose slug has no revisions at all — is a different
+    problem ([02](02-data-model-events.md)).
 
 ## Relationship to ngit / NIP-34
 
