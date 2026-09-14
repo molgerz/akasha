@@ -176,6 +176,29 @@ describe('buildPages — revisions removed by a NIP-09 request', () => {
     expect(pages[0].leaves.map((r) => r.id)).toEqual(['merge'])
   })
 
+  // The mirror image of the case above: not a surviving merge with a removed
+  // parent, but a removed *merge*. Following only its first parent would leave
+  // the second branch referenced by nothing and it would resurface as a leaf —
+  // a fork the author never made, and one that offers a merge against a base
+  // the repaired graph can no longer prove.
+  it('does not resurrect the second branch of a removed merge as a leaf', () => {
+    const pages = buildPages(
+      [
+        rev({ id: 'r1', createdAt: 100 }),
+        rev({ id: 'r2', createdAt: 150 }),
+        rev({ id: 'merge', createdAt: 200, parentRevs: ['r1', 'r2'] }),
+        rev({ id: 'after', createdAt: 300, parentRevs: ['merge'] }),
+      ],
+      new Map(),
+      new Set(['merge']),
+    )
+    expect(pages[0].head.id).toBe('after')
+    expect(pages[0].leaves.map((r) => r.id)).toEqual(['after'])
+    // The successor keeps the arity its author gave it: bridging past the
+    // removed merge must not turn `after` into a merge revision itself.
+    expect(pages[0].revisions[0].parentRevs).toEqual(['r1'])
+  })
+
   it('drops a page once its only revision was removed', () => {
     expect(buildPages([rev({ id: 'r1' })], new Map(), new Set(['r1']))).toEqual([])
   })

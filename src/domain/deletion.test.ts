@@ -35,24 +35,33 @@ describe('parseDeletion', () => {
 
   it('keeps every target of a multi-event request', () => {
     const deletion = parseDeletion(
-      event({ tags: [[TAGS.DELETED_EVENT, TARGET], [TAGS.DELETED_EVENT, OTHER]] }),
+      event({
+        tags: [
+          [TAGS.GROUP, 'engineering'],
+          [TAGS.DELETED_EVENT, TARGET],
+          [TAGS.DELETED_EVENT, OTHER],
+        ],
+      }),
       'engineering',
     )
     expect(deletion?.targets).toEqual([TARGET, OTHER])
   })
 
-  it('tolerates a request without an h tag', () => {
-    const deletion = parseDeletion(
-      event({
-        tags: [
-          [TAGS.DELETED_EVENT, TARGET],
-          [TAGS.DELETED_KIND, String(KINDS.PAGE_REVISION)],
-        ],
-      }),
-      'engineering',
-    )
-    expect(deletion?.targets).toEqual([TARGET])
-    expect(deletion?.group).toBeNull()
+  // A request without an h tag is not part of this group's state: the
+  // subscription filters on #h, so one could only arrive from a relay that
+  // ignores the filter — and then it is exactly the event not to honour.
+  it('rejects a request without an h tag', () => {
+    expect(
+      parseDeletion(
+        event({
+          tags: [
+            [TAGS.DELETED_EVENT, TARGET],
+            [TAGS.DELETED_KIND, String(KINDS.PAGE_REVISION)],
+          ],
+        }),
+        'engineering',
+      ),
+    ).toBeNull()
   })
 
   it('rejects a request for another group', () => {
@@ -69,6 +78,7 @@ describe('parseDeletion', () => {
       parseDeletion(
         event({
           tags: [
+            [TAGS.GROUP, 'engineering'],
             [TAGS.DELETED_EVENT, TARGET],
             [TAGS.DELETED_KIND, String(KINDS.COMMENT)],
           ],
@@ -81,7 +91,10 @@ describe('parseDeletion', () => {
   it('rejects the wrong event kind', () => {
     expect(
       parseDeletion(
-        event({ kind: KINDS.PAGE_REVISION, tags: [[TAGS.DELETED_EVENT, TARGET]] }),
+        event({
+          kind: KINDS.PAGE_REVISION,
+          tags: [[TAGS.GROUP, 'engineering'], [TAGS.DELETED_EVENT, TARGET]],
+        }),
         'engineering',
       ),
     ).toBeNull()

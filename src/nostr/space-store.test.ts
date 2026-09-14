@@ -370,6 +370,27 @@ describe('NIP-09 deletion requests', () => {
     unsubscribe()
   })
 
+  // Relays deliver in no particular order, and the request lives on its own
+  // subscription — so the kind 5 regularly arrives before the revision it
+  // names. The skip is derived on every rebuild for exactly this reason.
+  it('skips a revision that arrives after the request naming it', () => {
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    deliver(deletion('d1', 'alice', ['r2']))
+    expect(store.getSnapshot().pages).toEqual([])
+
+    deliver(revision('r1', 'page', [], 'alice', 100))
+    deliver(revision('r2', 'page', ['r1'], 'alice', 200))
+    deliver(revision('r3', 'page', ['r2'], 'alice', 300))
+
+    const page = store.getSnapshot().pages[0]
+    expect(page.revisions.map((r) => r.id)).toEqual(['r3', 'r1'])
+    expect(page.revisions[0].parentRevs).toEqual(['r1'])
+    expect(store.getSnapshot().removedRevisions.map((r) => r.id)).toEqual(['r2'])
+    unsubscribe()
+  })
+
   it('ignores a request from someone other than the revision’s author', () => {
     const store = getSpaceStore(RELAY, GROUP)
     const unsubscribe = store.subscribe(() => {})

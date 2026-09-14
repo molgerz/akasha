@@ -23,7 +23,6 @@ vi.mock('../nostr/profile-store', () => ({
   },
 }))
 
-
 /**
  * Turning a construct off in the editor's parser is the sort of change that is
  * blamed for anything that breaks afterwards — this one was, wrongly, for task

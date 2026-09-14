@@ -10,8 +10,8 @@ export type Deletion = {
   id: string
   author: string
   createdAt: number
-  /** group id from the h tag, when present */
-  group: string | null
+  /** group id from the h tag */
+  group: string
   /** event ids the request names */
   targets: string[]
 }
@@ -24,20 +24,26 @@ function tagValues(event: Event, name: string): string[] {
 
 /**
  * Turns an event into a deletion request. Returns null for anything that is not
- * a kind 5 about page revisions in this group: a foreign `h`, or a `k` that
- * names another kind, means the request is not ours to honour.
+ * a kind 5 about page revisions in this group: a missing or foreign `h`, or a
+ * `k` that names another kind, means the request is not ours to honour.
  *
- * The `h` tag is tolerated as absent — NIP-09 does not define it, and a
- * client that sends one without it is still asking about a revision. The
- * author gate lives where both request and revision are known (`SpaceStore`):
- * a request only removes a revision the requester wrote.
- * docs/09-security-privacy.md
+ * The `h` tag is required even though NIP-09 does not define one, because it
+ * is what makes a request readable back as the group's shared state: the
+ * subscription asks for `#h`, so a request without it never reaches this app
+ * in the first place, and only what we publish ourselves (which always carries
+ * `h`) can arrive. The check is still made here rather than trusted from the
+ * filter — a relay can deliver whatever it likes, and an event from another
+ * group must not remove a revision in this one.
+ * docs/09-security-privacy.md (Forged `h` tags)
+ *
+ * The author gate lives where both request and revision are known
+ * (`SpaceStore`): a request only removes a revision the requester wrote.
  */
 export function parseDeletion(event: Event, expectedGroup: string): Deletion | null {
   if (event.kind !== KINDS.DELETION_REQUEST) return null
 
-  const group = tagValues(event, TAGS.GROUP)[0] ?? null
-  if (group && group !== expectedGroup) return null
+  const group = tagValues(event, TAGS.GROUP)[0]
+  if (!group || group !== expectedGroup) return null
 
   const kinds = tagValues(event, TAGS.DELETED_KIND)
   if (kinds.length > 0 && !kinds.includes(String(KINDS.PAGE_REVISION))) return null

@@ -22,7 +22,6 @@ vi.mock('../nostr/profile-store', () => ({
   },
 }))
 
-
 /**
  * `- [<no-break space>] milk` is not a task list item — GFM asks for U+0020 —
  * so it is drawn as an ordinary bullet followed by two brackets, and nothing

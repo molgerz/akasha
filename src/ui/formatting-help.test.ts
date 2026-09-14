@@ -23,7 +23,6 @@ vi.mock('../nostr/profile-store', () => ({
   },
 }))
 
-
 /**
  * The `Formatting` fold is the answer to "why did that not do anything", so
  * every line in it is typed into a real editor here and has to draw what it

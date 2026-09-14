@@ -19,7 +19,6 @@ vi.mock('../nostr/profile-store', () => ({
   },
 }))
 
-
 const ALICE = '1'.repeat(64)
 const BOB = 'ab'.repeat(32)
 const ALICE_NPUB = nip19.npubEncode(ALICE)
