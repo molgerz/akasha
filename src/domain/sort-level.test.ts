@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildPages } from './pages'
-import {
-  levelNeedsSorting,
-  previewLevelOrder,
-  sortLevelByTitle,
-  sortableLevels,
-} from './sort-level'
+import { previewLevelOrder, sortLevelByTitle, sortableLevels } from './sort-level'
 import type { Page } from './pages'
 import type { Revision } from './revision'
 
@@ -52,7 +47,6 @@ describe('sortLevelByTitle', () => {
   it('has nothing to do for a level that is already ordered by its titles', () => {
     const pages = tree(['a', null, null], ['b', null, null])
     expect(sortLevelByTitle(pages, null)).toEqual([])
-    expect(levelNeedsSorting(pages, null)).toBe(false)
   })
 
   it('sorts one level, not the whole space', () => {
@@ -85,6 +79,37 @@ describe('sortLevelByTitle', () => {
     ])
     expect(pages.find((page) => page.slug === 'gone')?.hidden).toBe(true)
     expect(sortLevelByTitle(pages, null).map((entry) => entry.slug)).toEqual(['gone'])
+  })
+
+  it('sorts the child of a hidden parent with the top level, where it is drawn', () => {
+    // `buildTree` leaves a hidden page out of its node map before it hangs
+    // anything, so its children come up to the top level — pinned by
+    // `pages.test.ts`, "does not take its subpages with it". Grouping by "the
+    // parent exists" instead would file the child under a level nobody sees,
+    // and sorting the top level would quietly skip a page sitting in it.
+    // Reachable by tombstoning any page that has subpages.
+    const pages = buildPages([
+      rev({ id: 'handbook' }),
+      rev({
+        id: 'handbook-2',
+        slug: 'handbook',
+        title: 'handbook',
+        createdAt: 2000,
+        parentRevs: ['handbook'],
+        tombstone: true,
+      }),
+      rev({ id: 'onboarding', parentSlug: 'handbook', order: 'zz' }),
+      rev({ id: 'alpha' }),
+    ])
+    expect(pages.find((page) => page.slug === 'handbook')?.hidden).toBe(true)
+
+    expect(sortLevelByTitle(pages, null).map((entry) => entry.slug)).toEqual(['onboarding'])
+    // …still without repairing the parentage on the way past
+    expect(sortLevelByTitle(pages, null)[0].parentSlug).toBe('handbook')
+    // and the hidden page is not offered as a level of its own, which would
+    // put `onboarding` in two levels at once
+    expect(sortableLevels(pages).map((level) => level.parentSlug)).toEqual([null])
+    expect(sortableLevels(pages)[0]).toMatchObject({ pages: 3, keyed: 1 })
   })
 })
 

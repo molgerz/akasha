@@ -258,8 +258,25 @@ Consequences worth knowing:
   per page, and there is no batch signing in NIP-07 — so the way out is not a
   bigger event but a smaller one: **"Sort by title" clears the keys** instead of
   computing new ones, because a page without a key is ordered by its title
-  anyway. Only the pages that actually carry one are rewritten, and the first
-  refusal stops the run (a half-sorted level is worse than an unsorted one).
+  anyway. Only the pages that actually carry one are rewritten.
+
+  A level is grouped by the parent the page is **drawn** under, which is what
+  `buildTree` decides: a page whose parent is missing *or hidden* is drawn at
+  the top level, so that is the level it is sorted with. Grouping by the raw
+  `page-parent` tag would file such a page into a level nobody can see, and
+  sorting the top level would then quietly skip a page sitting in it.
+
+  There is no batch signing in NIP-07, so the run is one signature per page and
+  cannot be atomic. The first refusal stops it — carrying on would only collect
+  the same answer — but a stopped run is not an untouched one, so the message
+  says how many placements had already been rewritten before it stopped.
+  Running it again is safe: a placement replaces the author's previous one, and
+  only the pages that still carry a key are offered.
+
+  Neither action is offered while the space is still loading. Revisions and
+  placements arrive on separate subscriptions, so before all of them have
+  ended, a page that has not arrived yet is indistinguishable from a page that
+  is gone.
 
   Handing out fresh keys `a`, `b`, `c` … would have been the obvious
   implementation and is worse in every way: an event per page instead of only
@@ -269,6 +286,12 @@ Consequences worth knowing:
   It lives in the space settings under *Page tree*, not on every branch row:
   re-sorting a level is rare, and a control on every row would be permanent
   weight for it.
+
+  **Open:** that page is admin-only, so today only an admin can sort a level —
+  while any signed-in member may drag pages one at a time, which signs the same
+  `31818` through the same path. The location was chosen for rarity, not to
+  restrict the action; whether the batch sort needs a home members can reach is
+  undecided.
 - **A placement whose page is gone can be cleaned up (CON-21).** It was inert
   rather than harmful, and that is exactly why it needed somewhere to be seen —
   nothing else in the app would ever mention it. The settings page lists them
@@ -287,6 +310,13 @@ Consequences worth knowing:
   Our relay stores the `kind 5` without deleting anything, the same as for a
   revision ([05](05-versioning-history.md)), so the client stops counting them
   while the events themselves may remain.
+
+  **Open:** the store keeps only the *winning* placement per slug, so when two
+  authors both left one behind for the same gone page, only the winner's is
+  listed. The shadowed author cannot see or clean up their own stale event,
+  even though the wording implies that only somebody else's is out of reach.
+  Enumerating every author's placement per slug would be a second index for a
+  case that is rare and inert; whether it is worth one is undecided.
 
 ## No NIP-54 mirror (`30818`) — decided against
 

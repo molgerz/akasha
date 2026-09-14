@@ -30,7 +30,13 @@
   the requester's own revision, keeps the revision as a tombstone and skips it
   in the chain, the diff and blame — the relay we run stores the `kind 5`
   but does not delete the revision, so a later read would otherwise show it
-  again.
+  again. A **placement** (`31818`) is the second target the client honours
+  (CON-21). It is named by address (`<kind>:<pubkey>:<d>`) rather than by id,
+  because every move replaces the event, and it is gated twice for the same
+  reason the revision gate exists — the relay enforces neither: only from the
+  placement's own author, and only for a slug with no revisions at all, so a
+  stale or forged request cannot unplace a page somebody is reading.
+  [02](02-data-model-events.md)
 - **Timestamps**: `created_at` is set by the client and therefore manipulable.
   Ordering primarily follows the `parent-rev` chain; the clock is for display.
 

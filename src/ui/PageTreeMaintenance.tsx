@@ -37,17 +37,42 @@ export function PageTreeMaintenance({
   groupId,
   pages,
   orphanPlacements,
+  loading,
 }: {
   relayUrl: string
   groupId: string
   pages: Page[]
   orphanPlacements: Placement[]
+  /** whether the space is still loading — see the guard below */
+  loading: boolean
 }) {
   const { session, ensureSamePubkey } = useSession()
   const [level, setLevel] = useState<string>('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
+
+  // Neither action may be offered before the space has finished loading, and
+  // the orphan list is the reason. Revisions and placements arrive on separate
+  // subscriptions with separate EOSEs, so in the window where the placements
+  // are in and the revisions are not, *every* placement has a slug with no
+  // revisions and the list reads as if the whole space were stale. Cleaning up
+  // then would ask the relay to drop the positions of live pages — the one way
+  // this maintenance screen could destroy something. `loading` is false only
+  // once all five subscriptions have ended, which is the first moment "this
+  // slug has no revisions" means anything. src/nostr/space-store.ts
+  if (loading) {
+    return (
+      <section className="space-y-6">
+        <SectionLabel>Page tree</SectionLabel>
+        <p className="max-w-[60ch] text-sm text-fg-muted">
+          Still reading this space. Both actions here judge the whole tree at
+          once — a page that has not arrived yet looks like a page that is
+          gone — so they wait until everything is in.
+        </p>
+      </section>
+    )
+  }
 
   const levels = sortableLevels(pages)
   // '' is the top level, which is a real choice and not "nothing picked" — so
@@ -89,6 +114,7 @@ export function PageTreeMaintenance({
     if (!(await guard()) || session.status !== 'signed-in') return
 
     let landed = 0
+    let failure: string | null = null
     for (const [index, entry] of pending.entries()) {
       setBusy(`Sorting… ${index + 1} of ${pending.length}`)
       try {
@@ -101,22 +127,35 @@ export function PageTreeMaintenance({
         })
         if (result.ok) landed += 1
         // The first refusal ends it. Carrying on would ask for a signature per
-        // remaining page to collect the same answer, and a half-sorted level
-        // is worse than an unsorted one.
+        // remaining page only to collect the same answer.
         else {
-          setError(fail(result.reason))
+          failure = fail(result.reason)
           break
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'signing was cancelled')
+        failure = err instanceof Error ? err.message : 'signing was cancelled'
         break
       }
     }
     setBusy(null)
-    if (landed > 0) {
-      setDone(
-        `${landed} of ${pending.length} page${pending.length === 1 ? '' : 's'} now sorts by its title.`,
+
+    // What already landed has to be said out loud. There is no batch signing
+    // and therefore no atomic run: stopping at the third of five leaves two
+    // pages rewritten and three not, and reporting only the refusal would let
+    // somebody believe the level was untouched when it is half sorted.
+    // Running it again is safe — a placement replaces the author's previous
+    // one, and only the pages that still carry a key are offered.
+    if (failure) {
+      setError(
+        landed > 0
+          ? `${failure} — but ${landed} of ${pending.length} had already been rewritten, so this ` +
+              'level is half sorted. Sorting it again picks up where this stopped.'
+          : failure,
       )
+      return
+    }
+    if (landed > 0) {
+      setDone(`${landed} page${landed === 1 ? '' : 's'} now sort${landed === 1 ? 's' : ''} by title.`)
     }
   }
 
@@ -126,6 +165,7 @@ export function PageTreeMaintenance({
     if (!(await guard()) || session.status !== 'signed-in') return
 
     let landed = 0
+    let failure: string | null = null
     for (const [index, placement] of mine.entries()) {
       setBusy(`Cleaning up… ${index + 1} of ${mine.length}`)
       try {
@@ -137,15 +177,26 @@ export function PageTreeMaintenance({
         })
         if (result.ok) landed += 1
         else {
-          setError(fail(result.reason))
+          failure = fail(result.reason)
           break
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'signing was cancelled')
+        failure = err instanceof Error ? err.message : 'signing was cancelled'
         break
       }
     }
     setBusy(null)
+
+    // Same as for the sort: a stopped run is not an untouched one.
+    if (failure) {
+      setError(
+        landed > 0
+          ? `${failure} — but ${landed} of ${mine.length} request${mine.length === 1 ? '' : 's'} ` +
+              'had already gone out. The rest are still listed below.'
+          : failure,
+      )
+      return
+    }
     if (landed > 0) {
       setDone(
         `${landed} stale position${landed === 1 ? '' : 's'} asked to be removed. This is a ` +
@@ -179,7 +230,10 @@ export function PageTreeMaintenance({
             {levels.map((entry) => (
               <option key={entry.parentSlug ?? ''} value={entry.parentSlug ?? ''}>
                 {'— '.repeat(entry.depth)}
-                {entry.title} ({entry.pages})
+                {/* the second number is what a sort would actually rewrite, so
+                    a level with work to do can be spotted without opening it */}
+                {entry.title} ({entry.pages}
+                {entry.keyed > 0 ? `, ${entry.keyed} positioned` : ''})
               </option>
             ))}
           </select>
@@ -216,14 +270,17 @@ export function PageTreeMaintenance({
           <p className="text-xs text-fg-subtle">No stale positions in this space.</p>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={() => void cleanUp()}
-                disabled={busy !== null || mine.length === 0}
-              >
-                {busy?.startsWith('Cleaning') ? busy : `Clean up ${mine.length} of mine`}
-              </Button>
-            </div>
+            {/* No button at all when none of these are the viewer's: a
+                disabled "Clean up 0 of mine" offers an action that does not
+                exist here, and the sentence below already says whose they
+                are. */}
+            {mine.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button onClick={() => void cleanUp()} disabled={busy !== null}>
+                  {busy?.startsWith('Cleaning') ? busy : `Clean up ${mine.length} of mine`}
+                </Button>
+              </div>
+            ) : null}
             <p className="text-xs text-fg-subtle">
               {orphanPlacements.map((placement) => placement.slug).join(', ')}
               {theirs > 0 ? (
@@ -245,7 +302,7 @@ export function PageTreeMaintenance({
         </Callout>
       ) : null}
 
-      {done && !error ? (
+      {done ? (
         <Callout tone="success" title="Done">
           {done}
         </Callout>

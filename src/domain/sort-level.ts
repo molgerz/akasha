@@ -25,10 +25,20 @@ import type { Page } from './pages'
  * itself. Grouping by the raw tag instead would put such a page in a level
  * nobody can see — so sorting the top level would quietly skip a page sitting
  * in it, which is the one thing a "sort this level" action must not do.
+ *
+ * A **hidden** parent counts as no parent for exactly the same reason.
+ * `buildTree` leaves a hidden page out of its node map before it hangs
+ * anything, so the children of a hidden page are drawn at the top level too
+ * (`buildTree` in `pages.ts`, pinned by "does not take its subpages with it").
+ * Testing only for existence would find the hidden parent, file those children
+ * into a level that is not drawn anywhere, and leave them out of the top level
+ * they *are* drawn in — the same silent skip, reachable by tombstoning any
+ * page that has subpages.
  */
 function effectiveParent(pages: Page[], page: Page): string | null {
   if (!page.parentSlug || page.parentSlug === page.slug) return null
-  return pages.some((entry) => entry.slug === page.parentSlug) ? page.parentSlug : null
+  const parent = pages.find((entry) => entry.slug === page.parentSlug)
+  return parent && !parent.hidden ? page.parentSlug : null
 }
 
 export type LevelSort = {
@@ -61,11 +71,6 @@ export function sortLevelByTitle(pages: Page[], parentSlug: string | null): Leve
     .map((page) => ({ slug: page.slug, parentSlug: page.parentSlug, order: null }))
 }
 
-/** Whether sorting `parentSlug`'s level would change anything at all. */
-export function levelNeedsSorting(pages: Page[], parentSlug: string | null): boolean {
-  return sortLevelByTitle(pages, parentSlug).length > 0
-}
-
 /** A level somebody can sort: the top level, and every page that has children. */
 export type SortableLevel = {
   /** null = the top level */
@@ -79,9 +84,15 @@ export type SortableLevel = {
 
 /**
  * Every level of the space, for a picker. Built from the flat page list rather
- * than the tree so it also names a level under a hidden page: those pages are
- * out of the tree but still in a level, and still sortable for the day the
- * parent comes back.
+ * than the tree so that a hidden *member* of a level is still counted into it —
+ * it is out of the tree but still in the level, and it would otherwise come
+ * back later carrying a stale key among freshly sorted siblings.
+ *
+ * A hidden *parent* is a different matter and is not offered: its children are
+ * drawn at the top level, so counting them here as a level of their own would
+ * put the same page in two levels at once and leave the top level's count and
+ * preview wrong. A level is what somebody can see, which is what makes "sort
+ * this level" mean anything.
  */
 export function sortableLevels(pages: Page[]): SortableLevel[] {
   const depthOf = (page: Page): number => {

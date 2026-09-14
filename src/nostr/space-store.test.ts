@@ -511,6 +511,22 @@ describe('orphaned placements', () => {
     unsubscribe()
   })
 
+  it('matches a slug that contains a colon, which only the address separates', () => {
+    // `parsePlacement` does not normalise the `d` tag, so a placement from
+    // another client can carry one. Reading the address as three parts would
+    // cut the slug at the first colon inside it, and that placement could then
+    // never be cleaned up.
+    const store = getSpaceStore(RELAY, GROUP)
+    const unsubscribe = store.subscribe(() => {})
+
+    deliver(placement('p2', 'a:b', 'alice'))
+    expect(store.getSnapshot().orphanPlacements).toHaveLength(1)
+
+    deliver(placementDeletion('d1', 'alice', 'a:b'))
+    expect(store.getSnapshot().orphanPlacements).toEqual([])
+    unsubscribe()
+  })
+
   it("ignores a request from anyone but the placement's own author", () => {
     // An addressable event is identified per author, and a relay would honour
     // nobody else's request either. The gate is ours because it enforces none.

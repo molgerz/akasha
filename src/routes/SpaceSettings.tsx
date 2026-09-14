@@ -202,6 +202,7 @@ export function SpaceSettings() {
           groupId={group.id}
           pages={space.pages}
           orphanPlacements={space.orphanPlacements}
+          loading={space.loading}
         />
       </div>
 

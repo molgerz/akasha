@@ -177,7 +177,14 @@ class SpaceStore {
     const dropped = new Set<string>()
     for (const deletion of this.deletions.values()) {
       for (const address of deletion.addresses) {
-        const [kind, pubkey, slug] = address.split(':')
+        // `<kind>:<pubkey>:<d>`, and only the first two colons separate: kind
+        // and pubkey cannot contain one, a `d` from another client can, and
+        // `parsePlacement` does not normalise the slug it reads. Destructuring
+        // three parts out would cut such a slug short, so its placement could
+        // never be matched and never be cleaned up.
+        const parts = address.split(':')
+        const [kind, pubkey] = parts
+        const slug = parts.slice(2).join(':')
         if (kind !== String(KINDS.PAGE_PLACEMENT) || !slug) continue
         if (pubkey !== deletion.author) continue
         if (slugsWithRevisions.has(slug)) continue

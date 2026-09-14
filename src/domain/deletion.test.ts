@@ -110,7 +110,9 @@ describe('parseDeletion', () => {
     expect(deletion?.targets).toEqual([])
   })
 
-  it('still refuses a request that names only kinds of ours', () => {
+  it('refuses a request whose kinds are all foreign, whatever it points at', () => {
+    // The `k` tags decide on their own: a request that names only other kinds
+    // is not ours to honour even when its `e` tag names an event of ours.
     const foreign = parseDeletion(
       event({
         tags: [
@@ -124,7 +126,19 @@ describe('parseDeletion', () => {
     expect(foreign).toBeNull()
   })
 
-  it('refuses a request that names nothing at all', () => {
-    expect(parseDeletion(event({ tags: [[TAGS.GROUP, 'engineering']] }), 'engineering')).toBeNull()
+  it('refuses a request that names a kind of ours but nothing to act on', () => {
+    // Our placement kind, no `e` and no `a`: there is nothing it could remove,
+    // so it is not a deletion request we can carry.
+    expect(
+      parseDeletion(
+        event({
+          tags: [
+            [TAGS.GROUP, 'engineering'],
+            [TAGS.DELETED_KIND, String(KINDS.PAGE_PLACEMENT)],
+          ],
+        }),
+        'engineering',
+      ),
+    ).toBeNull()
   })
 })
