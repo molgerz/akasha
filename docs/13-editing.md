@@ -410,6 +410,34 @@ A lone `:` opens nothing. `:` is punctuation far more often than it is the start
 of an emoji, and the boundary guard also keeps the dropdown out of `https://`
 and out of `12:30`.
 
+A shortcode typed out in full is replaced as well: the closing `:` of `:smile:`
+turns the whole thing into 😄, without touching the dropdown
+(`src/ui/editor-emoji-replace.ts`). Somebody who knows the name types straight
+through instead of picking from a list. It is the typed colon that converts,
+not the text: a line pasted out of a chat log keeps its `:tada:` until somebody
+retypes that last colon.
+
+The risk this used to wait on is firing where a colon is not a shortcode, and
+three guards answer it:
+
+- **The opening `:` has to sit on a word boundary** — start of line, or after
+  whitespace or an opening bracket. That is the dropdown's rule, extended to
+  `[` and `{`, and it is what leaves `a:b:c`, `12:30:45` and `host:8080/x:y:`
+  exactly as typed: in each of them a word character stands in front of the
+  colon that would open one.
+- **The name has to be one we know.** An unknown `:foo:` stays text — here the
+  curated list is an advantage, because a small vocabulary reaches into less
+  prose than a complete one would.
+- **Never inside code.** A shortcode in a code sample is a string literal, a
+  Ruby symbol or a YAML key. Closed code the parser has recognised is caught by
+  the syntax tree; a span the writer has only opened — `` `a :smile `` still
+  has no closing backtick, so there is no span to find — is caught by counting
+  the backticks on the line instead.
+
+It happens as a single change: one Ctrl+Z removes the emoji together with the
+shortcode it replaced. It cannot put `:smile:` back whole, because the closing
+colon never entered the document.
+
 ### Insert menu — `/`
 
 `/` at the start of a line opens a menu of blocks: **Table**, **Image /
@@ -592,9 +620,6 @@ there for the second question — "how do I get a quote?" — not the first one.
 - **Macros and layouts.** The insert menu (`/table`, `/image`, `/code`,
   `/quote`, `/divider`) holds the blocks the plain editor needs; the wiki-style
   macro and layout entries are still not built.
-- **Auto-replacing a typed-out `:smile:`.** Only the dropdown converts a
-  shortcode today. Doing it on the text as well risks firing inside things like
-  `a:b:c`, so it waits for a reason.
 - **Real-time collaboration.** Unchanged from [05](05-versioning-history.md):
   two people editing at once are resolved by the optimistic lock and the
   three-way merge, not by a CRDT.
