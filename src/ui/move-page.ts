@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { classifyRejection } from '../nostr/client'
 import { publishPlacement } from '../nostr/publish-placement'
 import { useSession } from '../session/session'
-import { canMoveUnder } from '../domain/pages'
+import { buildTree, canMoveUnder, descendantSlugs, flattenTree } from '../domain/pages'
+import { planMove } from '../domain/move-tree'
+import type { MoveDirection, TreeMove } from '../domain/move-tree'
 import type { Page } from '../domain/pages'
 
 /**
@@ -26,10 +28,12 @@ export type MovePage = {
 }
 
 /**
- * Moving a page. Drag & drop in the sidebar is the only gesture that gets
- * here, but the rules for it — signed in, no move into one's own subtree, the
- * relay's literal reason on a rejection — are worth keeping out of the tree
- * rendering.
+ * Moving a page. Both ways in end up here — dragging in the sidebar and the
+ * move menu (`src/ui/PageMoveMenu.tsx`), which is the keyboard's and the touch
+ * screen's path to the same placement. The rules — signed in, no move into
+ * one's own subtree, the relay's literal reason on a rejection — are worth
+ * keeping out of the tree rendering, and there must be exactly one copy of
+ * them however the move was asked for.
  */
 export function useMovePage(relayUrl: string, groupId: string, pages: Page[]): MovePage {
   const { session, ensureSamePubkey } = useSession()
@@ -94,4 +98,102 @@ export function useMovePage(relayUrl: string, groupId: string, pages: Page[]): M
   }
 
   return { move, busySlug, error, setError, signedIn: session.status === 'signed-in' }
+}
+
+/**
+ * The four entries of the move menu, with the names of the pages they would
+ * move past — so the menu reads as what will happen rather than as four bare
+ * directions. A move that has nowhere to go keeps its generic label: there is
+ * no page to name, and the entry is drawn disabled anyway.
+ *
+ * Here rather than in `PageMoveMenu.tsx` because these are words, not a
+ * component, and next to `useMovePage` because the two answer the same question
+ * from opposite ends: this one what a move would do, that one what the relay
+ * said when it was done. The arithmetic is in `src/domain/move-tree.ts`.
+ */
+const MOVE_LABEL: Record<MoveDirection, string> = {
+  up: 'Move up',
+  down: 'Move down',
+  in: 'Move in',
+  out: 'Move out',
+}
+
+const MOVE_ORDER: MoveDirection[] = ['up', 'down', 'in', 'out']
+
+export type MoveEntry = {
+  direction: MoveDirection
+  label: string
+  /** null when the move has nowhere to go */
+  move: TreeMove | null
+}
+
+export function moveEntries(pages: Page[], slug: string): MoveEntry[] {
+  const page = pages.find((entry) => entry.slug === slug) ?? null
+  const parent = page?.parentSlug
+    ? (pages.find((entry) => entry.slug === page.parentSlug) ?? null)
+    : null
+
+  return MOVE_ORDER.map((direction) => {
+    const move = planMove(pages, slug, direction)
+    let label = MOVE_LABEL[direction]
+    if (move && direction === 'in') {
+      const into = pages.find((entry) => entry.slug === move.parentSlug)
+      if (into) label = `Move under ${into.title}`
+    }
+    if (move && direction === 'out' && parent) label = `Move out of ${parent.title}`
+    return { direction, label, move }
+  })
+}
+
+/**
+ * Whether the page has anywhere at all to go — the one thing about a move the
+ * menu needs while it is still closed, for the state of its trigger.
+ *
+ * Answering it by building the entries and the target list is what it looked
+ * like it should be, and it costs `flattenTree` plus a `descendantSlugs` walk
+ * per candidate parent — O(n²) — for every row of the tree, on every snapshot
+ * the relay pushes, for a menu that is shut. This is the same answer in one
+ * pass: a page with a parent can always leave it (out, or up to the top level
+ * when that parent has been deleted), and a page at the top level can move
+ * wherever any page outside its own subtree is — that page is either a sibling
+ * it can step past or a parent it can be filed under.
+ */
+export function canMoveSomewhere(pages: Page[], slug: string): boolean {
+  const page = pages.find((entry) => entry.slug === slug)
+  if (!page) return false
+  if (page.parentSlug !== null) return true
+  const own = descendantSlugs(pages, slug)
+  return pages.some((entry) => entry.slug !== slug && !own.has(entry.slug))
+}
+
+/** A page the move menu offers as a new parent, at its depth in the tree. */
+export type MoveTarget = { slug: string | null; title: string; depth: number }
+
+/**
+ * Every page `slug` may be filed under, plus the top level, in tree order.
+ *
+ * The four steps reach a neighbour; this reaches the other end of the wiki,
+ * which with a mouse is one drag and without one would otherwise be a dozen
+ * repeats of "move down". Dragging has no equivalent of it — that is the point,
+ * not an oversight: a drag can only end somewhere the pointer can get to, and a
+ * list can name a row that is scrolled away or folded shut.
+ *
+ * What is left out is left out for the same reasons a drop is refused rather
+ * than reported as an error afterwards: the page itself, its own subtree (the
+ * branch would point into itself and drop out of the tree), and the parent it
+ * already has, because filing it there publishes an event that changes nothing.
+ */
+export function moveTargets(pages: Page[], slug: string): MoveTarget[] {
+  const page = pages.find((entry) => entry.slug === slug)
+  if (!page) return []
+
+  const targets: MoveTarget[] = []
+  if (page.parentSlug !== null) targets.push({ slug: null, title: 'Top level', depth: 0 })
+
+  for (const node of flattenTree(buildTree(pages))) {
+    if (node.slug === slug || node.slug === page.parentSlug) continue
+    if (!canMoveUnder(pages, slug, node.slug)) continue
+    targets.push({ slug: node.slug, title: node.title, depth: node.depth + 1 })
+  }
+  return targets
 }

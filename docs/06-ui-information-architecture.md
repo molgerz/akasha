@@ -192,9 +192,53 @@ suffocates in a column that narrow, so it gets `max-w-4xl`.
 
    The page itself carries **no** move action any more: a picker on the page
    was tried and dropped again — dragging in the tree says where a page ends up
-   far better than a list of slugs can. **Open:** moving therefore has no
-   keyboard path, and none on a touch screen either, where HTML5 drag & drop
-   does not fire.
+   far better than a list of slugs can.
+
+   **Without a pointer that can drag (CON-15).** Dragging stays the primary
+   gesture, but it is not a reachable one: HTML5 drag & drop has no keyboard
+   path at all, and on a touch screen it does not fire even once — there,
+   moving a page was impossible rather than awkward. Every row therefore
+   carries a **move button** (`src/ui/PageMoveMenu.tsx`), a real button in the
+   tab order and under a finger, opening a menu with two panels:
+
+   - the four steps every outline editor has — **up**, **down**, **in** under
+     the sibling above, **out** to directly behind the parent. The two that
+     change a page's parent name it ("Move under Handbook", "Move out of
+     Handbook"); up and down stay generic, because the row they pass is the
+     one directly above or below and pointing at it adds nothing. A step with
+     nowhere to go is drawn disabled rather than reporting an error after the
+     click — and so is one that would land the page exactly where it already
+     hangs, which `useMovePage` would otherwise drop without a word, leaving an
+     enabled entry that does nothing. Where each one lands is
+     `src/domain/move-tree.ts`.
+   - **Move to…**, the list of every page it may be filed under plus the top
+     level, in tree order and filterable by name. This is what dragging has no
+     equivalent of, deliberately: a drag can only end where the pointer can
+     reach, a list can name a row that is scrolled away or folded shut. Left
+     out are the page itself, its own subtree and the parent it already has —
+     the same three a drop refuses.
+
+   A step that picks a *parent* ("in", "Move to…") writes **no** order key and
+   lets the new level sort by title, which is exactly what dropping onto that
+   row does. The tree must not look different depending on whether a mouse or
+   the keyboard moved the page. A key is written only where a position within a
+   level is genuinely being chosen: up, down and out.
+
+   The trigger is hidden until the row is hovered or something inside it is
+   focused, like the "+" on the Pages heading — the tree is read far more often
+   than it is rearranged. A coarse pointer has no hover to reveal it with, so
+   `pointer-coarse` leaves it permanently visible there; without that line the
+   touch half of this would have shipped invisible.
+
+   The open panel is **portalled into the body** and positioned against the
+   window rather than drawn inside the row, for two reasons that both bite
+   exactly where the menu matters most. The tree scrolls in an
+   `overflow-y-auto` container, which clips anything absolutely positioned
+   inside it: a row in the lower part of the bar would open a menu with its
+   lower half — the destination list — cut away. And every row is a
+   `draggable` element, so a press inside the menu (selecting filter text,
+   sliding onto an entry) would be handed to the row as the start of a drag.
+   The panel flips above the row when the window has no room below it.
 4. **Settings** — one row to `/settings/spaces`, the entry into the settings
    hub (below). Stays visible even while already inside `/settings/*`, where
    the bar shows the hub's own nav (Profile/Spaces) instead of zones 2 and 3.

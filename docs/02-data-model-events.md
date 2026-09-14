@@ -249,11 +249,19 @@ extension sorts after it — so a gap can always be subdivided, however often.
 
 Consequences worth knowing:
 
-- Dropping a page **onto** another one clears its key: in its new level it
-  sorts by title until somebody drags it into place. That is predictable, and
-  it avoids carrying a key from a level where it meant something else.
+- Choosing a **parent** clears the key: in its new level the page sorts by
+  title until somebody puts it in place. That is predictable, and it avoids
+  carrying a key from a level where it meant something else. It holds for every
+  way of choosing one — dropping the page onto a row, and the move menu's "in"
+  and "Move to…" alike ([06](06-ui-information-architecture.md)) — so the tree
+  does not depend on which input device moved the page. A key is written only
+  where a position within a level is actually chosen.
 - Two pages whose titles normalise identically compare equal; the slug breaks
-  the tie, so every client shows the same order.
+  the tie, so every client shows the same order. A position *between* two of
+  them is then not expressible as a key at all, which the move menu's up and
+  down have to answer for: they step past the whole run of equal keys rather
+  than into it. One row further than asked, and a move — the alternative is a
+  key the page already has, published as nothing at all.
 - **Open:** the order is per page, so a *level* cannot be sorted in one go, and
   reordering needs a signature per page moved.
 - **Open:** nothing cleans up the placement of a deleted page. A `31818` whose

@@ -12,6 +12,8 @@ import { keyBetween } from '../../domain/order'
 import { spaceAccess } from '../../domain/space-access'
 import { useSession } from '../../session/session'
 import { useMovePage } from '../move-page'
+import { PageMoveMenu } from '../PageMoveMenu'
+import type { TreeMove } from '../../domain/move-tree'
 import { InitialsDisc, SectionLabel } from '../controls'
 import {
   ChevronDownIcon,
@@ -124,6 +126,18 @@ type TreeDnd = {
   onDropInGap: (parentSlug: string | null, before: PageNode | null, after: PageNode | null) => void
 }
 
+/**
+ * The move menu's side of a tree row: what it may move, and where to send the
+ * result. Separate from `TreeDnd` because it answers the question drag & drop
+ * cannot — moving without a pointer that can drag. src/ui/PageMoveMenu.tsx
+ */
+type TreeMoves = {
+  enabled: boolean
+  pages: Page[]
+  busySlug: string | null
+  onMove: (page: Page, move: TreeMove) => void
+}
+
 /** A fixed entry: icon, label, and grey when it is the page you are on. */
 function NavRow({
   to,
@@ -225,6 +239,16 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
         parent: pageBySlug(parentSlug),
         order: keyBetween(before ? orderKeyOf(before) : null, after ? orderKeyOf(after) : null),
       })
+    },
+  }
+
+  const moves: TreeMoves = {
+    enabled: signedIn,
+    pages: space.pages,
+    busySlug,
+    onMove: (page, target) => {
+      setError(null)
+      void move(page, { parent: pageBySlug(target.parentSlug), order: target.order })
     },
   }
 
@@ -352,6 +376,7 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
                 forcedOpen={forcedOpen}
                 onToggle={toggleBranch}
                 dnd={dnd}
+                moves={moves}
               />
             )}
 
@@ -387,6 +412,7 @@ function TreeBranch({
   forcedOpen,
   onToggle,
   dnd,
+  moves,
 }: {
   nodes: PageNode[]
   base: string
@@ -396,6 +422,7 @@ function TreeBranch({
   forcedOpen: Set<string>
   onToggle: (slug: string) => void
   dnd: TreeDnd
+  moves: TreeMoves
 }) {
   /**
    * The two rows a gap sits between, with the dragged page skipped: it is
@@ -471,7 +498,7 @@ function TreeBranch({
                   ? 'Drag onto a page to file it under it, or between two rows to sort it there'
                   : undefined
               }
-              className={`flex items-center rounded-md ${
+              className={`group/row flex items-center rounded-md ${
                 dnd.enabled ? 'cursor-grab select-none active:cursor-grabbing' : ''
               } ${
                 sameTarget(dnd.over, { kind: 'page', id: node.slug })
@@ -526,6 +553,17 @@ function TreeBranch({
                   />
                 ) : null}
               </NavLink>
+              {/* The keyboard's and the touch screen's way to the same move
+                  the drag does. Only signed in: the menu publishes an event,
+                  and an entry that cannot lead anywhere is worse than none. */}
+              {moves.enabled ? (
+                <PageMoveMenu
+                  page={node}
+                  pages={moves.pages}
+                  busy={moves.busySlug !== null}
+                  onMove={(target) => moves.onMove(node, target)}
+                />
+              ) : null}
             </div>
 
             {open ? (
@@ -537,6 +575,7 @@ function TreeBranch({
                 forcedOpen={forcedOpen}
                 onToggle={onToggle}
                 dnd={dnd}
+                moves={moves}
               />
             ) : null}
 
