@@ -257,7 +257,11 @@ Consequences worth knowing:
   does not depend on which input device moved the page. A key is written only
   where a position within a level is actually chosen.
 - Two pages whose titles normalise identically compare equal; the slug breaks
-  the tie, so every client shows the same order.
+  the tie, so every client shows the same order. A position *between* two of
+  them is then not expressible as a key at all, which the move menu's up and
+  down have to answer for: they step past the whole run of equal keys rather
+  than into it. One row further than asked, and a move — the alternative is a
+  key the page already has, published as nothing at all.
 - **Open:** the order is per page, so a *level* cannot be sorted in one go, and
   reordering needs a signature per page moved.
 - **Open:** nothing cleans up the placement of a deleted page. A `31818` whose

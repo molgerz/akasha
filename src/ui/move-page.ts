@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { classifyRejection } from '../nostr/client'
 import { publishPlacement } from '../nostr/publish-placement'
 import { useSession } from '../session/session'
-import { buildTree, canMoveUnder, flattenTree } from '../domain/pages'
+import { buildTree, canMoveUnder, descendantSlugs, flattenTree } from '../domain/pages'
 import { planMove } from '../domain/move-tree'
 import type { MoveDirection, TreeMove } from '../domain/move-tree'
 import type { Page } from '../domain/pages'
@@ -28,10 +28,12 @@ export type MovePage = {
 }
 
 /**
- * Moving a page. Drag & drop in the sidebar is the only gesture that gets
- * here, but the rules for it — signed in, no move into one's own subtree, the
- * relay's literal reason on a rejection — are worth keeping out of the tree
- * rendering.
+ * Moving a page. Both ways in end up here — dragging in the sidebar and the
+ * move menu (`src/ui/PageMoveMenu.tsx`), which is the keyboard's and the touch
+ * screen's path to the same placement. The rules — signed in, no move into
+ * one's own subtree, the relay's literal reason on a rejection — are worth
+ * keeping out of the tree rendering, and there must be exactly one copy of
+ * them however the move was asked for.
  */
 export function useMovePage(relayUrl: string, groupId: string, pages: Page[]): MovePage {
   const { session, ensureSamePubkey } = useSession()
@@ -141,6 +143,27 @@ export function moveEntries(pages: Page[], slug: string): MoveEntry[] {
     if (move && direction === 'out' && parent) label = `Move out of ${parent.title}`
     return { direction, label, move }
   })
+}
+
+/**
+ * Whether the page has anywhere at all to go — the one thing about a move the
+ * menu needs while it is still closed, for the state of its trigger.
+ *
+ * Answering it by building the entries and the target list is what it looked
+ * like it should be, and it costs `flattenTree` plus a `descendantSlugs` walk
+ * per candidate parent — O(n²) — for every row of the tree, on every snapshot
+ * the relay pushes, for a menu that is shut. This is the same answer in one
+ * pass: a page with a parent can always leave it (out, or up to the top level
+ * when that parent has been deleted), and a page at the top level can move
+ * wherever any page outside its own subtree is — that page is either a sibling
+ * it can step past or a parent it can be filed under.
+ */
+export function canMoveSomewhere(pages: Page[], slug: string): boolean {
+  const page = pages.find((entry) => entry.slug === slug)
+  if (!page) return false
+  if (page.parentSlug !== null) return true
+  const own = descendantSlugs(pages, slug)
+  return pages.some((entry) => entry.slug !== slug && !own.has(entry.slug))
 }
 
 /** A page the move menu offers as a new parent, at its depth in the tree. */

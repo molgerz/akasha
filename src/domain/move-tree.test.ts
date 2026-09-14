@@ -63,6 +63,18 @@ function after(pages: Page[], slug: string, direction: MoveDirection): string[] 
 
 const FLAT = tree(['a', null], ['b', null], ['c', null], ['d', null])
 
+/**
+ * A level whose three titles all normalise to the same key, so all three sort
+ * equal and only the slug tells them apart (docs/02). Reachable without
+ * trying: a rename keeps the page's slug (`src/ui/PageEditor.tsx`), so two
+ * pages can end up named the same thing.
+ */
+const TIED = buildPages([
+  rev({ id: 'a1', title: 'Setup' }),
+  rev({ id: 'b2', title: 'setup' }),
+  rev({ id: 'c3', title: 'SETUP' }),
+])
+
 describe('siblingsOf', () => {
   it('keeps the level in the order the tree draws it', () => {
     expect(siblingsOf(FLAT, null).map((page) => page.slug)).toEqual(['a', 'b', 'c', 'd'])
@@ -102,6 +114,24 @@ describe('planMove — up and down', () => {
     const only = tree(['a', null], ['x', 'a'])
     expect(planMove(only, 'x', 'up')).toBeNull()
     expect(planMove(only, 'x', 'down')).toBeNull()
+  })
+})
+
+describe('planMove — siblings that share an order key', () => {
+  it('steps past the whole run rather than landing in a gap that is not there', () => {
+    // One row would be the better answer and is not expressible as a key: all
+    // three sort equal, so there is nothing between them to aim at.
+    expect(after(TIED, 'a1', 'down')).toEqual(['b2', 'c3', 'a1'])
+  })
+
+  it('never hands back the key the page already has', () => {
+    const moved = applyMove(TIED, 'a1', 'down')
+    const back = planMove(moved, 'a1', 'up')
+    // The step that publishes nothing is the one that hurts: `useMovePage`
+    // drops a move that changes neither parent nor key silently, so the entry
+    // looks enabled and does nothing at all.
+    expect(back?.order).not.toBe(moved.find((page) => page.slug === 'a1')!.order)
+    expect(after(moved, 'a1', 'up')).toEqual(['a1', 'b2', 'c3'])
   })
 })
 

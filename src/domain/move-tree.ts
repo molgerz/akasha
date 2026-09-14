@@ -21,7 +21,7 @@ export type MoveDirection =
   | 'up'
   /** swap with the sibling below */
   | 'down'
-  /** become the last child of the sibling above */
+  /** become a child of the sibling above (sorted by title, like a drop onto it) */
   | 'in'
   /** leave the parent and follow directly behind it */
   | 'out'
@@ -51,9 +51,10 @@ export function siblingsOf(pages: Page[], parentSlug: string | null): Page[] {
  * Where `slug` would land, or `null` when the move has nowhere to go: the top
  * row of a level cannot go up, the bottom row cannot go down, a page at the
  * root cannot come further out, and a page with no sibling above it has
- * nothing to move in under. The menu disables exactly those entries, so an
+ * nothing to move in under — and when the step would land the page exactly
+ * where it already hangs. The menu disables exactly those entries, so an
  * unavailable move is visible before it is tried rather than reported as an
- * error afterwards.
+ * error afterwards, or worse, silently dropped by `useMovePage`.
  *
  * A caller still has to check `canMoveUnder`: not for these four — none of
  * them can reach into the page's own subtree, because a sibling and a parent
@@ -71,44 +72,78 @@ export function planMove(pages: Page[], slug: string, direction: MoveDirection):
   const previous = level[index - 1]
   const next = level[index + 1]
 
-  switch (direction) {
-    case 'up': {
-      if (!previous) return null
-      // Between the two rows above it: the one it swaps with, and whatever is
-      // above *that*. Writing "the key of the row above" would collide rather
-      // than overtake.
-      const above = level[index - 2]
-      return {
-        parentSlug: page.parentSlug,
-        order: keyBetween(above ? orderKeyOf(above) : null, orderKeyOf(previous)),
+  const move = ((): TreeMove | null => {
+    switch (direction) {
+      case 'up': {
+        if (!previous) return null
+        // Between the two rows above it: the one it swaps with, and whatever is
+        // above *that*. Writing "the key of the row above" would collide rather
+        // than overtake.
+        const above = level[index - 2]
+        const ceiling = above ? orderKeyOf(above) : null
+        return {
+          parentSlug: page.parentSlug,
+          // A tie above it has no gap to land in (see `tied`), so the step
+          // goes in front of the whole run instead. Further than one row, but
+          // it is a move; asking for the gap would hand back the key the page
+          // already has.
+          order: tied(ceiling, orderKeyOf(previous))
+            ? keyBetween(null, orderKeyOf(previous))
+            : keyBetween(ceiling, orderKeyOf(previous)),
+        }
+      }
+      case 'down': {
+        if (!next) return null
+        const below = level[index + 2]
+        const floor = below ? orderKeyOf(below) : null
+        return {
+          parentSlug: page.parentSlug,
+          order: tied(orderKeyOf(next), floor)
+            ? keyBetween(orderKeyOf(next), null)
+            : keyBetween(orderKeyOf(next), floor),
+        }
+      }
+      case 'in': {
+        if (!previous) return null
+        // No key: this step chooses a parent, not a position, and dropping the
+        // same page onto the same row with a mouse chooses no position either.
+        // See `TreeMove` — one destination, one result, whatever moved it.
+        return { parentSlug: previous.slug, order: null }
+      }
+      case 'out': {
+        const parent = pages.find((entry) => entry.slug === page.parentSlug)
+        if (!parent) return null
+        // Directly behind the parent in the parent's own level, which is where
+        // the row visually already is — the step is outwards, not downwards.
+        const uncles = siblingsOf(pages, parent.parentSlug)
+        const after = uncles[uncles.findIndex((entry) => entry.slug === parent.slug) + 1]
+        return {
+          parentSlug: parent.parentSlug,
+          order: keyBetween(orderKeyOf(parent), after ? orderKeyOf(after) : null),
+        }
       }
     }
-    case 'down': {
-      if (!next) return null
-      const below = level[index + 2]
-      return {
-        parentSlug: page.parentSlug,
-        order: keyBetween(orderKeyOf(next), below ? orderKeyOf(below) : null),
-      }
-    }
-    case 'in': {
-      if (!previous) return null
-      // No key: this step chooses a parent, not a position, and dropping the
-      // same page onto the same row with a mouse chooses no position either.
-      // See `TreeMove` — one destination, one result, whatever moved it.
-      return { parentSlug: previous.slug, order: null }
-    }
-    case 'out': {
-      const parent = pages.find((entry) => entry.slug === page.parentSlug)
-      if (!parent) return null
-      // Directly behind the parent in the parent's own level, which is where
-      // the row visually already is — the step is outwards, not downwards.
-      const uncles = siblingsOf(pages, parent.parentSlug)
-      const after = uncles[uncles.findIndex((entry) => entry.slug === parent.slug) + 1]
-      return {
-        parentSlug: parent.parentSlug,
-        order: keyBetween(orderKeyOf(parent), after ? orderKeyOf(after) : null),
-      }
-    }
-  }
+  })()
+
+  // A step that publishes the placement the page already has is worse than one
+  // that is greyed out: `useMovePage` drops it as a no-op without a word, so
+  // the entry looks enabled and does nothing at all when clicked. Reporting it
+  // as "nowhere to go" is the same answer the first and last row of a level
+  // already get.
+  if (move && move.parentSlug === page.parentSlug && move.order === page.order) return null
+  return move
+}
+
+/**
+ * Whether two neighbouring keys leave no gap between them.
+ *
+ * `keyBetween` answers "behind the pair" for equal bounds, which is the right
+ * answer for a drop — a gesture that pointed at a place between two rows that
+ * do not have one. For a *step* it is not: the page is asked to overtake one
+ * row and would pass both, and the step back then computes the very same key
+ * and moves nothing. Two siblings share a key whenever their titles normalise
+ * identically and neither has been placed by hand (docs/02).
+ */
+function tied(before: string | null, after: string | null): boolean {
+  return before !== null && after !== null && before >= after
 }
