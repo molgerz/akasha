@@ -114,7 +114,12 @@ Two quirks that cost time:
 ## Operations
 
 - Put the relay behind TLS (`wss://`), because an HTTPS page may not open
-  `ws://` (except for `localhost`).
+  `ws://` (except for `localhost`). The app derives the scheme from the host in
+  the space address and counts exactly `localhost`, `127.0.0.1` and `[::1]` as
+  local, each with an optional port — so a dev relay bound to IPv6 is reached
+  as `[::1]:8080`. Every other host gets `wss://`, including one that merely
+  begins with `localhost` (`isLocalRelayHost` in `src/nostr/group-address.ts`;
+  CON-45).
 - The web app is a static bundle on any host.
 - Backup = event export as JSONL. Because everything is signed, an export is
   verifiably restorable on another relay. That is also the migration strategy:
