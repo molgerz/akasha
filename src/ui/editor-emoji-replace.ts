@@ -19,10 +19,10 @@ import { EMOJI } from './emoji'
  * they are the whole substance of this file:
  *
  * 1. **The opening colon must sit on a word boundary** — start of line, or
- *    after whitespace or an opening bracket. That is the same rule the `:`
- *    dropdown already uses, and it is what keeps `a:b:c`, `12:30:45` and
- *    `https://host:8080/x:y:` as they were: in each of them the colon that
- *    would open a shortcode has a word character in front of it.
+ *    after whitespace or an opening bracket. That is the `:` dropdown's rule
+ *    (`(?:^|[\s(])`), extended to `[` and `{`, and it is what keeps `a:b:c`,
+ *    `12:30:45` and `https://host:8080/x:y:` as they were: in each of them the
+ *    colon that would open a shortcode has a word character in front of it.
  * 2. **The name must be a shortcode we actually know.** An unknown `:foo:`
  *    stays text. A curated list is a small vocabulary, which here is a feature:
  *    the narrower it is, the less prose it can reach into.
@@ -36,13 +36,9 @@ const BY_NAME = new Map(EMOJI.map((emoji) => [emoji.name, emoji.char]))
 
 /**
  * A shortcode in a code sample is text somebody meant literally. The same set
- * as `editor-slash.ts`, minus `URL`: a colon inside a link target never has a
- * boundary in front of it anyway, so the guard above already covers it.
- *
- * The limit worth knowing: an inline code span the writer is still typing has
- * no closing backtick yet, so the parser does not see a span at all and the
- * replacement does fire inside it. Closed code — which is all code that has
- * been written, pasted or reopened — is what this catches.
+ * as `NO_MENTION` in `markdown-live.ts`, minus `URL`: a colon inside a link
+ * target never has a boundary in front of it anyway, so the guard above
+ * already covers it.
  */
 const CODE_NODES = new Set(['InlineCode', 'CodeText', 'FencedCode', 'CodeBlock', 'HTMLBlock'])
 
@@ -55,6 +51,43 @@ function inCode(state: EditorState, pos: number): boolean {
     if (CODE_NODES.has(node.name)) return true
   }
   return false
+}
+
+/**
+ * Is `pos` inside an inline code span the writer has opened but not yet closed?
+ *
+ * `inCode` above only knows the code the parser has recognised, and a span
+ * being typed has no closing backtick yet: while somebody writes `` `:smile: ``
+ * the document reads `` `:smile `` and lezer sees a plain paragraph. Without
+ * this the replacement fired inside it and silently ate a code literal they
+ * meant to keep — the one case the ticket names that the tree cannot answer.
+ *
+ * So the backticks are counted directly, by CommonMark's own pairing rule: a
+ * run of n backticks is closed by the next run of exactly n, and runs of other
+ * lengths in between are literal text. An unclosed run left over means the
+ * caret sits inside a span.
+ *
+ * Bounded to the line the caret is on, like the shortcode window itself. A
+ * span may run across lines in a paragraph, but then only the *opening* line
+ * is misread, and the direction of the error is the safe one: an un-replaced
+ * `:smile:` is an annoyance, a mangled code literal is a bug.
+ */
+function inUnclosedCodeSpan(state: EditorState, lineFrom: number, pos: number): boolean {
+  const text = state.sliceDoc(lineFrom, pos)
+  let open: number | null = null
+  for (let i = 0; i < text.length; ) {
+    if (text[i] !== '`') {
+      i += 1
+      continue
+    }
+    let end = i
+    while (end < text.length && text[end] === '`') end += 1
+    const run = end - i
+    if (open === null) open = run
+    else if (open === run) open = null
+    i = end
+  }
+  return open !== null
 }
 
 /**
@@ -88,7 +121,7 @@ export function emojiReplacement(
 
   const char = BY_NAME.get(match[1]!.toLowerCase())
   if (char === undefined) return null
-  if (inCode(state, open)) return null
+  if (inCode(state, open) || inUnclosedCodeSpan(state, line.from, open)) return null
 
   return { from: open, to: from, insert: char }
 }
@@ -96,8 +129,14 @@ export function emojiReplacement(
 /**
  * The rule, wired to the text cursor. Registered as an `inputHandler` rather
  * than as a transaction filter so the typed colon never reaches the document
- * at all: the shortcode becomes the emoji in one change, which is also one
- * step for undo — Ctrl+Z brings the whole `:smile:` back, not a colon.
+ * at all: the shortcode becomes the emoji in one change.
+ *
+ * What that costs is the literal shortcode on undo. The change is annotated
+ * `input.type` like the typing around it, so history groups them: one Ctrl+Z
+ * takes the emoji and the `:smile` that was typed before it away together. It
+ * cannot put `:smile:` back, because the closing colon was never in the
+ * document. Getting the literal text back would mean keeping the replacement
+ * out of that group — a decision about undo, not about this rule.
  */
 export const emojiOnTyping: Extension = EditorView.inputHandler.of((view, from, to, text) => {
   const change = emojiReplacement(view.state, from, to, text)

@@ -413,27 +413,30 @@ and out of `12:30`.
 A shortcode typed out in full is replaced as well: the closing `:` of `:smile:`
 turns the whole thing into 😄, without touching the dropdown
 (`src/ui/editor-emoji-replace.ts`). Somebody who knows the name types straight
-through, and a line pasted from a chat log stops being the one place in the
-wiki that still shows `:tada:` where every other client shows the character.
+through instead of picking from a list. It is the typed colon that converts,
+not the text: a line pasted out of a chat log keeps its `:tada:` until somebody
+retypes that last colon.
 
 The risk this used to wait on is firing where a colon is not a shortcode, and
 three guards answer it:
 
 - **The opening `:` has to sit on a word boundary** — start of line, or after
-  whitespace or an opening bracket. That is the dropdown's own rule, and it is
-  what leaves `a:b:c`, `12:30:45` and `host:8080/x:y:` exactly as typed: in each
-  of them a word character stands in front of the colon that would open one.
+  whitespace or an opening bracket. That is the dropdown's rule, extended to
+  `[` and `{`, and it is what leaves `a:b:c`, `12:30:45` and `host:8080/x:y:`
+  exactly as typed: in each of them a word character stands in front of the
+  colon that would open one.
 - **The name has to be one we know.** An unknown `:foo:` stays text — here the
   curated list is an advantage, because a small vocabulary reaches into less
   prose than a complete one would.
 - **Never inside code.** A shortcode in a code sample is a string literal, a
-  Ruby symbol or a YAML key. One limit worth knowing: an inline span still being
-  typed has no closing backtick yet, so the parser sees no span and the
-  replacement does fire inside it. Closed code — all code that has been written,
-  pasted or reopened — is caught.
+  Ruby symbol or a YAML key. Closed code the parser has recognised is caught by
+  the syntax tree; a span the writer has only opened — `` `a :smile `` still
+  has no closing backtick, so there is no span to find — is caught by counting
+  the backticks on the line instead.
 
-It happens as a single change, so one Ctrl+Z brings `:smile:` back whole rather
-than peeling off a colon.
+It happens as a single change: one Ctrl+Z removes the emoji together with the
+shortcode it replaced. It cannot put `:smile:` back whole, because the closing
+colon never entered the document.
 
 ### Insert menu — `/`
 
