@@ -19,7 +19,7 @@ Completed and verified:
 | Vite + React 19 + TS, routing per [06](06-ui-information-architecture.md) | `src/routes/router.tsx` |
 | Light/dark theme tokens, `@theme inline` | `src/index.css` |
 | System/light/dark switch with persistence | `src/theme/theme.tsx`, `src/ui/ThemeToggle.tsx` |
-| No flash on load | Inline script in `index.html` |
+| No flash on load | `public/theme-bootstrap.js`, loaded render-blocking from `index.html` |
 | All kinds and tags in one place, slug normalisation | `src/nostr/kinds.ts` |
 | Parsing the group address `host'id` | `src/nostr/group-address.ts` |
 | Relay connection + NIP-11 + backoff | `src/nostr/relay-status.ts` |
