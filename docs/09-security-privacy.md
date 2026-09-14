@@ -69,4 +69,18 @@ places that draw an image are `MarkdownImage` in `src/ui/Markdown.tsx` and
 An npub is a permanent pseudonym: everything a person posts is linkable across
 relays. For teams where npubs map to real names, that effectively means a public
 activity history. This belongs on the app's onboarding page, not in the fine
-print. **Open:** there is no onboarding page yet.
+print.
+
+**Built (CON-13):** `PseudonymNotice` says it once, as a dialog, on the first
+sign-in with a given npub — before anything can be written under it. Three
+sentences: what is signed stays linked to the npub forever, publishing cannot
+reliably be undone, and a private space restricts access rather than encrypting.
+A banner under the top bar would have been cheaper and is exactly what the
+paragraph above rules out; a strip that can be scrolled past is the fine print.
+
+Acknowledgement is stored **per npub**, not per browser (`nc-pseudonym-ack`, see
+`src/ui/pseudonym-ack.ts`). A browser is not an identity: a second person on the
+same machine, or the same person starting a deliberately unlinked second
+pseudonym, has not been told anything. There is still no onboarding *page* — the
+app has no sign-in page either, on purpose (docs/06), so the notice goes to the
+reader instead of the reader to it.

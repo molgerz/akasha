@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useLocation, useParams } from 'react-router-dom'
 import { Topbar } from './Topbar'
 import { SessionNotice } from '../SessionNotice'
+import { PseudonymNotice } from '../PseudonymNotice'
 import { Sidebar } from './Sidebar'
 import { TableOfContents } from './TableOfContents'
 import { TocProvider, useTocMarkdown } from './toc-context'
@@ -75,6 +76,7 @@ function Shell() {
         onToggleOverlay={() => setOverlay((open) => !open)}
       />
       <SessionNotice />
+      <PseudonymNotice />
 
       <div className="relative flex min-h-0 flex-1">
         {/* Folded away entirely rather than down to a 40px rail of icons. The
