@@ -131,6 +131,20 @@ export function ListTreeIcon(props: IconProps) {
   )
 }
 
+/**
+ * Moving a page: arrows up and down over a vertical rule. Not a drag handle —
+ * the gesture behind it is a menu of steps, not a grab. src/ui/PageMoveMenu.tsx
+ */
+export function MoveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.5v15" />
+      <path d="M8.5 8 12 4.5 15.5 8" />
+      <path d="M8.5 16 12 19.5 15.5 16" />
+    </Icon>
+  )
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <Icon {...props}>

@@ -3,6 +3,8 @@ import { classifyRejection } from '../nostr/client'
 import { publishPlacement } from '../nostr/publish-placement'
 import { useSession } from '../session/session'
 import { canMoveUnder } from '../domain/pages'
+import { planMove } from '../domain/move-tree'
+import type { MoveDirection, TreeMove } from '../domain/move-tree'
 import type { Page } from '../domain/pages'
 
 /**
@@ -94,4 +96,49 @@ export function useMovePage(relayUrl: string, groupId: string, pages: Page[]): M
   }
 
   return { move, busySlug, error, setError, signedIn: session.status === 'signed-in' }
+}
+
+/**
+ * The four entries of the move menu, with the names of the pages they would
+ * move past — so the menu reads as what will happen rather than as four bare
+ * directions. A move that has nowhere to go keeps its generic label: there is
+ * no page to name, and the entry is drawn disabled anyway.
+ *
+ * Here rather than in `PageMoveMenu.tsx` because these are words, not a
+ * component, and next to `useMovePage` because the two answer the same question
+ * from opposite ends: this one what a move would do, that one what the relay
+ * said when it was done. The arithmetic is in `src/domain/move-tree.ts`.
+ */
+const MOVE_LABEL: Record<MoveDirection, string> = {
+  up: 'Move up',
+  down: 'Move down',
+  in: 'Move in',
+  out: 'Move out',
+}
+
+const MOVE_ORDER: MoveDirection[] = ['up', 'down', 'in', 'out']
+
+export type MoveEntry = {
+  direction: MoveDirection
+  label: string
+  /** null when the move has nowhere to go */
+  move: TreeMove | null
+}
+
+export function moveEntries(pages: Page[], slug: string): MoveEntry[] {
+  const page = pages.find((entry) => entry.slug === slug) ?? null
+  const parent = page?.parentSlug
+    ? (pages.find((entry) => entry.slug === page.parentSlug) ?? null)
+    : null
+
+  return MOVE_ORDER.map((direction) => {
+    const move = planMove(pages, slug, direction)
+    let label = MOVE_LABEL[direction]
+    if (move && direction === 'in') {
+      const into = pages.find((entry) => entry.slug === move.parentSlug)
+      if (into) label = `Move under ${into.title}`
+    }
+    if (move && direction === 'out' && parent) label = `Move out of ${parent.title}`
+    return { direction, label, move }
+  })
 }
