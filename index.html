@@ -5,20 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Akasha</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <script>
-      // Must run BEFORE the bundle, otherwise light mode flashes on every
-      // reload. See docs/12-theming.md.
-      ;(function () {
-        try {
-          var mode = localStorage.getItem('nc-theme') || 'system'
-          var dark =
-            mode === 'dark' ||
-            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-        } catch (e) {}
-      })()
-    </script>
+    <!--
+      Theme bootstrap: classic and render-blocking on purpose. It must run
+      before the bundle so a reload does not flash light mode, and it is an
+      external file so the shipped CSP can be `script-src 'self'` with no
+      'unsafe-inline'. See public/theme-bootstrap.js, docs/12-theming.md and
+      docs/09-security-privacy.md.
+    -->
+    <script src="/theme-bootstrap.js"></script>
   </head>
   <body>
     <div id="root"></div>
