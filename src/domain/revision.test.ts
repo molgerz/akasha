@@ -60,4 +60,24 @@ describe('parseRevision', () => {
   it('falls back to the slug as the title when no title tag exists', () => {
     expect(parseRevision(event({}), 'engineering')?.title).toBe('onboarding')
   })
+
+  it('reads the tombstone from the tag being there, not from its value', () => {
+    const hidden = (tag: string[]) =>
+      parseRevision(
+        event({ tags: [['h', 'engineering'], ['d', 'onboarding'], tag] }),
+        'engineering',
+      )?.tombstone
+
+    expect(hidden(['tombstone', '1'])).toBe(true)
+    // The value is reserved and deliberately not read — anything there means
+    // the same thing, so a client writing something else still hides the page
+    // rather than silently publishing a visible one. src/nostr/kinds.ts
+    expect(hidden(['tombstone', 'whatever'])).toBe(true)
+    expect(hidden(['tombstone', ''])).toBe(true)
+    expect(hidden(['summary', 'not a tombstone'])).toBe(false)
+  })
+
+  it('is not a tombstone when the tag is absent', () => {
+    expect(parseRevision(event({}), 'engineering')?.tombstone).toBe(false)
+  })
 })

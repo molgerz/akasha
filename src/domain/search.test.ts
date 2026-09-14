@@ -16,6 +16,7 @@ function rev(slug: string, title: string, content: string): Revision {
     parentRevs: [],
     summary: null,
     content,
+    tombstone: false,
   }
 }
 
@@ -74,3 +75,16 @@ describe('highlightParts', () => {
     expect(highlightParts('nothing here', 'vpn')).toEqual([{ text: 'nothing here', hit: false }])
   })
 })
+
+describe('a hidden page', () => {
+  it('is never a search hit — a result is navigation', () => {
+    const revisions = [
+      rev('notes', 'Release notes', 'the release notes'),
+      { ...rev('notes', 'Release notes', 'the release notes'), id: 'gone', createdAt: 2000, parentRevs: ['notes'], tombstone: true },
+    ]
+    const pages = buildPages(revisions)
+    expect(pages[0].hidden).toBe(true)
+    expect(searchPages(pages, 'release')).toEqual([])
+  })
+})
+

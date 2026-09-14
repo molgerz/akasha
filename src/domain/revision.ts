@@ -23,6 +23,13 @@ export type Revision = {
   parentRevs: string[]
   summary: string | null
   content: string
+  /**
+   * This revision hides its page. Not a property of the page but of the
+   * revision, so hiding is an ordinary, signed step in the chain that a later
+   * revision undoes — and the history of a hidden page stays readable.
+   * docs/05-versioning-history.md
+   */
+  tombstone: boolean
 }
 
 function firstTag(event: Event, name: string): string | null {
@@ -56,5 +63,7 @@ export function parseRevision(event: Event, expectedGroup: string): Revision | n
       .map((tag) => tag[1]),
     summary: firstTag(event, TAGS.SUMMARY),
     content: event.content,
+    // Presence is the signal; the value is reserved. src/nostr/kinds.ts
+    tombstone: event.tags.some((tag) => tag[0] === TAGS.TOMBSTONE),
   }
 }

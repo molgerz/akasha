@@ -45,6 +45,10 @@ export function SpaceOverview() {
   const name = meta?.name ?? group.id
   const access = spaceAccess(session.status === 'signed-in' ? session.pubkey : null, space)
   const isMember = session.status === 'signed-in' && space.members.includes(session.pubkey)
+  // A hidden page is out of the navigation, and this list is navigation. It
+  // stays in `space.pages` on purpose — the page's own URL and its history
+  // still have to reach it. src/domain/pages.ts
+  const listed = space.pages.filter((page) => !page.hidden)
   const isAdmin =
     session.status === 'signed-in' &&
     space.admins.some((admin) => admin.pubkey === session.pubkey)
@@ -182,15 +186,15 @@ export function SpaceOverview() {
           scanned down one column — cards would put every title at a
           different x. */}
       <section className="mb-10">
-        <SectionLabel className="mb-3">Pages · {space.pages.length}</SectionLabel>
-        {space.pages.length === 0 ? (
+        <SectionLabel className="mb-3">Pages · {listed.length}</SectionLabel>
+        {listed.length === 0 ? (
           <p className="text-sm text-fg-muted">
             {space.loading ? 'loading pages…' : 'No pages in this space yet.'}
           </p>
         ) : (
           <Card>
             <ul className="divide-y divide-line">
-              {space.pages.map((page) => (
+              {listed.map((page) => (
                 <li key={page.slug}>
                   <Link
                     to={`${base}/${page.slug}`}

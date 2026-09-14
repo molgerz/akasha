@@ -30,6 +30,7 @@ function rev(partial: Partial<Revision> & { id: string }): Revision {
     parentRevs: [],
     summary: null,
     content: '',
+    tombstone: false,
     ...partial,
   }
 }

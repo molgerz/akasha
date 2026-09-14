@@ -92,6 +92,18 @@ export const TAGS = {
   SUMMARY: 'summary',
   /** Restore: id of the revision whose content was taken over */
   RESTORE_OF: 'restore-of',
+  /**
+   * Marks a revision as hiding its page: the page leaves the tree, the search
+   * and the navigation, while its history stays reachable and a later revision
+   * without the tag brings it back.
+   *
+   * **Presence is the signal, the value is not read.** It is written as `1`
+   * rather than as a one-element tag because a bare `["tombstone"]` is legal
+   * NIP-01 but is the kind of edge every relay and foreign client handles
+   * slightly differently. The value is reserved; nothing may start depending
+   * on it without a NIP to point at. docs/05-versioning-history.md
+   */
+  TOMBSTONE: 'tombstone',
   /** NIP-09: event id a deletion request targets */
   DELETED_EVENT: 'e',
   /** NIP-09: kind of the events a deletion request targets */

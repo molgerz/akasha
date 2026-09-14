@@ -22,6 +22,7 @@ function rev(partial: Partial<Revision> & { id: string }): Revision {
     parentRevs: [],
     summary: null,
     content: '',
+    tombstone: false,
     ...partial,
   }
 }
@@ -365,3 +366,59 @@ describe('sibling order', () => {
     expect(second.map((page) => page.slug)).toEqual(first.map((page) => page.slug))
   })
 })
+
+describe('a hidden page', () => {
+  const hidden = (slug: string, parent: string | null = null) =>
+    rev({ id: `${slug}-2`, slug, title: slug, parentSlug: parent, tombstone: true, createdAt: 2000, parentRevs: [`${slug}-1`] })
+  const visible = (slug: string, parent: string | null = null) =>
+    rev({ id: `${slug}-1`, slug, title: slug, parentSlug: parent })
+
+  it('is hidden by its head, so a later revision brings it back', () => {
+    const gone = buildPages([visible('notes'), hidden('notes')])
+    expect(gone[0].hidden).toBe(true)
+
+    const back = buildPages([
+      visible('notes'),
+      hidden('notes'),
+      rev({ id: 'notes-3', slug: 'notes', title: 'notes', createdAt: 3000, parentRevs: ['notes-2'] }),
+    ])
+    expect(back[0].hidden).toBe(false)
+    // nothing was thrown away: the tombstone is still part of the history
+    expect(back[0].revisions).toHaveLength(3)
+  })
+
+  it('stays in `pages` — its history and its own URL still have to find it', () => {
+    const pages = buildPages([visible('notes'), hidden('notes')])
+    expect(pages.map((page) => page.slug)).toEqual(['notes'])
+  })
+
+  it('is left out of the tree', () => {
+    const pages = buildPages([visible('a'), visible('notes'), hidden('notes')])
+    expect(flattenTree(buildTree(pages)).map((node) => node.slug)).toEqual(['a'])
+  })
+
+  it('does not take its subpages with it — they come up to the top level', () => {
+    // Hiding a page is a statement about that page. A subpage somebody else
+    // wrote is not covered by it, and taking the branch off screen would
+    // remove pages nobody asked to remove.
+    const pages = buildPages([
+      visible('handbook'),
+      hidden('handbook'),
+      visible('onboarding', 'handbook'),
+    ])
+    const tree = buildTree(pages)
+    expect(tree.map((node) => node.slug)).toEqual(['onboarding'])
+    expect(tree[0].depth).toBe(0)
+  })
+
+  it('follows the newer leaf on a fork, the same revision the content follows', () => {
+    const base = rev({ id: 'r1', slug: 'notes', title: 'notes' })
+    const keep = rev({ id: 'keep', slug: 'notes', title: 'notes', createdAt: 2000, parentRevs: ['r1'] })
+    const drop = rev({ id: 'drop', slug: 'notes', title: 'notes', createdAt: 3000, parentRevs: ['r1'], tombstone: true })
+    const pages = buildPages([base, keep, drop])
+    expect(pages[0].leaves).toHaveLength(2)
+    expect(pages[0].head.id).toBe('drop')
+    expect(pages[0].hidden).toBe(true)
+  })
+})
+

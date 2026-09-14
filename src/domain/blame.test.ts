@@ -16,6 +16,7 @@ function rev(id: string, content: string, parents: string[] = [], author = 'alic
     parentRevs: parents,
     summary: null,
     content,
+    tombstone: false,
   }
 }
 
