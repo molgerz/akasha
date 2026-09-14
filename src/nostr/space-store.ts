@@ -16,6 +16,8 @@ import { buildPages, buildTree } from '../domain/pages'
 import type { Page, PageNode } from '../domain/pages'
 import { parseComment } from '../domain/comment'
 import type { Comment } from '../domain/comment'
+import { parseDeletion } from '../domain/deletion'
+import type { Deletion } from '../domain/deletion'
 import type { Event } from 'nostr-tools'
 
 export type SpaceSnapshot = {
@@ -26,6 +28,8 @@ export type SpaceSnapshot = {
   pages: Page[]
   tree: PageNode[]
   comments: Comment[]
+  /** revisions their author asked the relay to delete, newest first */
+  removedRevisions: Revision[]
 }
 
 const EMPTY: SpaceSnapshot = {
@@ -36,6 +40,7 @@ const EMPTY: SpaceSnapshot = {
   pages: [],
   tree: [],
   comments: [],
+  removedRevisions: [],
 }
 
 /**
@@ -51,6 +56,7 @@ class SpaceStore {
   /** the winning placement per slug — src/domain/placement.ts */
   private placements = new Map<string, Placement>()
   private comments = new Map<string, Comment>()
+  private deletions = new Map<string, Deletion>()
   private metadataEvent: Event | null = null
   private stop: (() => void)[] = []
   private epoch = -1
@@ -121,6 +127,7 @@ class SpaceStore {
     this.revisions.clear()
     this.placements.clear()
     this.comments.clear()
+    this.deletions.clear()
     this.metadataEvent = null
     this.groupEventAt.clear()
     if (this.snapshot === EMPTY) return
@@ -129,8 +136,31 @@ class SpaceStore {
   }
 
   private rebuildPages(): void {
-    const pages = buildPages([...this.revisions.values()], this.placements)
-    this.emit({ pages, tree: buildTree(pages) })
+    const revisions = [...this.revisions.values()]
+    const deleted = this.effectiveDeleted()
+    const pages = buildPages(revisions, this.placements, deleted)
+    const removedRevisions = revisions
+      .filter((revision) => deleted.has(revision.id))
+      .sort((a, b) => b.createdAt - a.createdAt)
+    this.emit({ pages, tree: buildTree(pages), removedRevisions })
+  }
+
+  /**
+   * The revision ids a valid NIP-09 request actually removes. The relay does
+   * not enforce this, so the gate is ours: a request counts only against the
+   * requester's own revision, and only once that revision is loaded. Deriving
+   * the set on every rebuild instead of storing it keeps the result
+   * independent of the order in which the revision and the request arrive.
+   */
+  private effectiveDeleted(): Set<string> {
+    const deleted = new Set<string>()
+    for (const deletion of this.deletions.values()) {
+      for (const target of deletion.targets) {
+        const revision = this.revisions.get(target)
+        if (revision && revision.author === deletion.author) deleted.add(target)
+      }
+    }
+    return deleted
   }
 
   /**
@@ -205,7 +235,7 @@ class SpaceStore {
 
     const onEose = () => {
       this.eoseSeen += 1
-      if (this.eoseSeen >= 4) this.emit({ loading: false })
+      if (this.eoseSeen >= 5) this.emit({ loading: false })
     }
 
     this.stop.push(
@@ -231,6 +261,12 @@ class SpaceStore {
         this.relayUrl,
         { kinds: [KINDS.PAGE_PLACEMENT], '#h': [this.groupId] },
         (event) => this.applyPlacement(event),
+        onEose,
+      ),
+      client.subscribe(
+        this.relayUrl,
+        { kinds: [KINDS.DELETION_REQUEST], '#h': [this.groupId] },
+        (event) => this.applyDeletion(event),
         onEose,
       ),
     )
@@ -295,6 +331,20 @@ class SpaceStore {
     if (!comment) return
     this.comments.set(event.id, comment)
     this.emit({ comments: [...this.comments.values()] })
+  }
+
+  /**
+   * A NIP-09 request. It is kept as a deletion and re-applied on every rebuild,
+   * so a revision that arrives after its request is still skipped and the
+   * tombstone is re-derived from the relay on the next round rather than
+   * living only in local state.
+   */
+  private applyDeletion(event: Event): void {
+    if (this.deletions.has(event.id)) return
+    const deletion = parseDeletion(event, this.groupId)
+    if (!deletion) return
+    this.deletions.set(event.id, deletion)
+    this.rebuildPages()
   }
 
   private emit(change: Partial<SpaceSnapshot>): void {

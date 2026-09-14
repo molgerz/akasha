@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { CompletionContext } from '@codemirror/autocomplete'
@@ -9,6 +9,19 @@ import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
 import { slashInsertCompletion } from './editor-slash'
 import { FORMATTING_RULES } from './formatting-help'
+
+// The mention source warms the profile cache via the real store, which would
+// open a WebSocket to VITE_PROFILE_RELAYS (a local relay during development).
+// These tests only assert the chip's text, never a fetched name, so the store
+// is replaced to keep the suite off the network.
+vi.mock('../nostr/profile-store', () => ({
+  peekProfile: () => null,
+  primeProfiles: () => {},
+  observeProfile: (_pubkey: string, listener: (profile: null) => void) => {
+    listener(null)
+    return () => {}
+  },
+}))
 
 /**
  * The `Formatting` fold is the answer to "why did that not do anything", so

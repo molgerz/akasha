@@ -1,10 +1,23 @@
 // @vitest-environment jsdom
 // The mention source warms the profile cache, and that store lives on window.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { nip19 } from 'nostr-tools'
 import { CompletionContext } from '@codemirror/autocomplete'
 import { EditorState } from '@codemirror/state'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
+
+// The mention source warms the profile cache via the real store, which would
+// open a WebSocket to VITE_PROFILE_RELAYS (a local relay during development).
+// These tests only assert the chip's text, never a fetched name, so the store
+// is replaced to keep the suite off the network.
+vi.mock('../nostr/profile-store', () => ({
+  peekProfile: () => null,
+  primeProfiles: () => {},
+  observeProfile: (_pubkey: string, listener: (profile: null) => void) => {
+    listener(null)
+    return () => {}
+  },
+}))
 
 const ALICE = '1'.repeat(64)
 const BOB = 'ab'.repeat(32)

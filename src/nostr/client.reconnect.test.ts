@@ -463,8 +463,8 @@ describe('NostrClient and SpaceStore reconnect races', () => {
       const subscribeSpy = vi.spyOn(client, 'subscribe')
 
       const releaseStore = store.subscribe(() => {})
-      // one round: group state, revisions, comments, placements
-      expect(subscribeSpy).toHaveBeenCalledTimes(4)
+      // one round: group state, revisions, comments, placements, deletions
+      expect(subscribeSpy).toHaveBeenCalledTimes(5)
       // Let that round's REQ frames go out first: nostr-tools sends them
       // asynchronously, and they are not what this test measures.
       await vi.advanceTimersByTimeAsync(10)
@@ -492,7 +492,7 @@ describe('NostrClient and SpaceStore reconnect races', () => {
       expect(client.getSnapshot(url).connection).toBe('online')
       expect(client.getSnapshot(url).ready).toBe(true)
       expect(subscribeSpy, 'must resubscribe once the new connection is up').toHaveBeenCalledTimes(
-        4,
+        5,
       )
       // Closing the subscriptions on top of the deliberate pool.close() can
       // still put a CLOSE frame on a dead socket; a REQ frame cannot, and that

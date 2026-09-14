@@ -26,7 +26,12 @@
   E2EE stays deliberately out of scope; it would also be incompatible with
   relay-enforced permissions and full-text search.
 - **Deletion**: NIP-09 is a request. Once published, content may survive on
-  copies. UI wording: "request deletion".
+  copies. UI wording: "request deletion". The client honours a request only for
+  the requester's own revision, and skips that revision
+  in the chain, the diff and blame. Nothing is marked deleted anywhere: what
+  is kept is the `kind 5` request, and the skip is re-derived from it on every
+  read — the relay we run stores the request but does not delete the revision,
+  so a later read would otherwise show it again.
 - **Timestamps**: `created_at` is set by the client and therefore manipulable.
   Ordering primarily follows the `parent-rev` chain; the clock is for display.
 

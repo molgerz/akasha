@@ -28,12 +28,126 @@ function sortNewestFirst(a: Revision, b: Revision): number {
 }
 
 /**
+ * The chain with the revisions a NIP-09 request removed taken out of it.
+ *
+ * `bridged` holds, per surviving revision, the ancestors it reaches *only*
+ * through a removed revision and that are not among its own `parentRevs`.
+ * They are not made parents: a revision's arity is what its author signed, and
+ * a successor that inherited two parents from a removed merge would wear the
+ * "merge" badge for a merge nobody made. Marking them as referenced is what
+ * they are needed for — see `buildPages`.
+ */
+type RepairedChain = {
+  revisions: Revision[]
+  bridged: Map<string, string[]>
+}
+
+/**
+ * Drops the revisions a NIP-09 request removed and reconnects the chain around
+ * them: a survivor whose `parent-rev` names a removed revision is re-pointed
+ * at that revision's nearest surviving ancestor along the first-parent path.
+ * The removed node is skipped, but its ancestors stay reachable — the chain
+ * does not tear.
+ *
+ * A removed *merge* has ancestors off that path as well. They are collected
+ * into `bridged` rather than dropped, because nothing visible would point at
+ * them otherwise and they would come back as leaves — a fork out of a deletion.
+ *
+ * A predecessor that was never loaded is kept as-is (the tolerated missing
+ * link), and a parent cycle among removed revisions resolves to nothing rather
+ * than hanging. The first parent stays first, so `firstParentChain` keeps its
+ * meaning; duplicate targets are collapsed.
+ */
+function repairChain(revisions: Revision[], deleted: Set<string>): RepairedChain {
+  if (deleted.size === 0) return { revisions, bridged: new Map() }
+  const byId = new Map(revisions.map((revision) => [revision.id, revision]))
+  const visible: Revision[] = []
+  const bridged = new Map<string, string[]>()
+  for (const revision of revisions) {
+    if (deleted.has(revision.id)) continue
+    const repaired = reconnectParents(revision.parentRevs, byId, deleted)
+    visible.push({ ...revision, parentRevs: repaired.parents })
+    if (repaired.bridged.length > 0) bridged.set(revision.id, repaired.bridged)
+  }
+  return { revisions: visible, bridged }
+}
+
+function reconnectParents(
+  parentRevs: string[],
+  byId: Map<string, Revision>,
+  deleted: Set<string>,
+): { parents: string[]; bridged: string[] } {
+  const parents: string[] = []
+  const bridged: string[] = []
+  for (const parentId of parentRevs) {
+    if (!deleted.has(parentId)) {
+      if (!parents.includes(parentId)) parents.push(parentId)
+      continue
+    }
+    const first = firstSurvivingAncestor(parentId, byId, deleted)
+    if (first && !parents.includes(first)) parents.push(first)
+    for (const id of survivingAncestors(parentId, byId, deleted)) {
+      if (id !== first && !parents.includes(id) && !bridged.includes(id)) bridged.push(id)
+    }
+  }
+  return { parents, bridged }
+}
+
+/** The new parent: up the first-parent path until a revision survives. */
+function firstSurvivingAncestor(
+  start: string,
+  byId: Map<string, Revision>,
+  deleted: Set<string>,
+): string {
+  let current = start
+  const seen = new Set<string>()
+  while (deleted.has(current)) {
+    // A cycle between removed revisions has no surviving ancestor.
+    if (seen.has(current)) return ''
+    seen.add(current)
+    const parent = byId.get(current)
+    if (!parent) return ''
+    current = parent.parentRevs[0] ?? ''
+  }
+  return current
+}
+
+/** Every surviving revision reachable through the removed ones above `start`. */
+function survivingAncestors(
+  start: string,
+  byId: Map<string, Revision>,
+  deleted: Set<string>,
+): string[] {
+  const found: string[] = []
+  const seen = new Set<string>()
+  const queue = [start]
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    if (seen.has(id)) continue
+    seen.add(id)
+    if (!deleted.has(id)) {
+      found.push(id)
+      continue
+    }
+    const revision = byId.get(id)
+    // Never loaded: the tolerated missing link, and nothing to climb further.
+    if (revision) queue.push(...revision.parentRevs)
+  }
+  return found
+}
+
+/**
  * Builds the pages from all revisions of a group.
  *
  * Head resolution: leaves are revisions no other revision points at via
  * `parent-rev`. With several leaves (concurrent editing) the newest is
  * displayed, but the fork is not hidden — `leaves` keeps all of them.
  * docs/05-versioning-history.md
+ *
+ * `deleted` holds the ids a NIP-09 request removed. They are skipped in the
+ * exposed list and in the leaves, and the survivors are reconnected around
+ * them (see `repairChain`) — the repair is what keeps a removed middle
+ * revision's parent from looking like a leaf again.
  *
  * Where a page hangs comes from its placement event when there is one, and
  * from the tags of its first revision otherwise — a page that has never been
@@ -42,9 +156,11 @@ function sortNewestFirst(a: Revision, b: Revision): number {
 export function buildPages(
   revisions: Revision[],
   placements: Map<string, Placement> = new Map(),
+  deleted: Set<string> = new Set(),
 ): Page[] {
+  const { revisions: visible, bridged } = repairChain(revisions, deleted)
   const bySlug = new Map<string, Revision[]>()
-  for (const revision of revisions) {
+  for (const revision of visible) {
     const list = bySlug.get(revision.slug)
     if (list) list.push(revision)
     else bySlug.set(revision.slug, [revision])
@@ -53,9 +169,14 @@ export function buildPages(
   const pages: Page[] = []
   for (const [slug, list] of bySlug) {
     const sorted = [...list].sort(sortNewestFirst)
+    // Over the repaired list, so a survivor bridged past a removed revision
+    // counts as referencing the surviving ancestor it now points at — plus
+    // the ancestors it reaches only through a removed merge, which are
+    // referenced just as they were before the removal, only not as parents.
     const referenced = new Set<string>()
     for (const revision of sorted) {
       for (const parent of revision.parentRevs) referenced.add(parent)
+      for (const ancestor of bridged.get(revision.id) ?? []) referenced.add(ancestor)
     }
     const leaves = sorted.filter((revision) => !referenced.has(revision.id))
     const head = leaves[0] ?? sorted[0]

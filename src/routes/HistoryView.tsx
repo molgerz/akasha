@@ -8,6 +8,7 @@ import { DiffView } from '../ui/DiffView'
 import { Author, AuthorName } from '../ui/Author'
 import { useSession } from '../session/session'
 import { publishRevision } from '../nostr/publish-page'
+import { publishRevisionDeletion } from '../nostr/publish-deletion'
 import { classifyRejection } from '../nostr/client'
 import { deleteGroupEvent } from '../nostr/moderation'
 import { forgetEvent } from '../nostr/space-store'
@@ -29,6 +30,7 @@ export function HistoryView() {
   const [details, setDetails] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   if (!group || !base || !slug) {
     return (
@@ -44,11 +46,56 @@ export function HistoryView() {
 
   const spaceName = space.metadata?.name ?? group.id
   const page = space.pages.find((entry) => entry.slug === slug)
+  // Computed off the route's slug, not off `page`: removing the last revision
+  // of a page makes the page itself disappear, and that is precisely the
+  // moment the reader has to be told why — see the branch below.
+  const removedHere = space.removedRevisions.filter((revision) => revision.slug === slug)
+
+  /**
+   * What the view owes the reader about the deletion request, in both
+   * branches: the outcome of an action just taken, and what a NIP-09 request
+   * did and did not achieve. docs/09-security-privacy.md
+   */
+  const feedback = (
+    <>
+      {error ? (
+        <div className="mb-6">
+          <Callout tone="danger" title="That did not work">
+            {error}
+          </Callout>
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div className="mb-6">
+          <Callout tone="warning" title="Deletion requested — not a guarantee">
+            {notice}
+          </Callout>
+        </div>
+      ) : null}
+
+      {removedHere.length > 0 ? (
+        <div className="mb-6">
+          <Callout tone="info" title="Removed by their authors">
+            {removedHere.length} revision{removedHere.length === 1 ? '' : 's'} of this page
+            {removedHere.length === 1 ? ' was' : ' were'} hidden after a NIP-09 request. The
+            relay and other clients may still hold a copy.
+          </Callout>
+        </div>
+      ) : null}
+    </>
+  )
+
   if (!page) {
     return (
       <PageFrame crumbs={[{ label: spaceName, to: base }, { label: 'History' }]}>
+        {feedback}
         <p className="text-base text-fg-muted">
-          {space.loading ? 'loading…' : 'No revisions for this slug.'}
+          {space.loading
+            ? 'loading…'
+            : removedHere.length > 0
+              ? 'No revisions left for this slug.'
+              : 'No revisions for this slug.'}
         </p>
       </PageFrame>
     )
@@ -67,6 +114,7 @@ export function HistoryView() {
     )
     if (!ok) return
     setError(null)
+    setNotice(null)
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -93,9 +141,58 @@ export function HistoryView() {
   const from = selection ? revisions.find((r) => r.id === selection.from) : revisions[1]
   const to = selection ? revisions.find((r) => r.id === selection.to) : revisions[0]
 
+  /**
+   * NIP-09: ask the relay to drop one's own revision. The wording never says
+   * "deleted" — the relay may keep the event and other copies can remain, so
+   * this is a request. docs/09-security-privacy.md
+   */
+  const requestDeletion = async (revision: Revision) => {
+    if (session.status !== 'signed-in') return
+    const ok = window.confirm(
+      `Ask this space's relay to remove the revision from ${stamp(revision.createdAt)}?\n\n` +
+        'This is a request, not a guarantee. The relay may keep the revision, copies on ' +
+        'other relays and clients can remain, and newer revisions that build on it keep ' +
+        'their text.',
+    )
+    if (!ok) return
+    setError(null)
+    setNotice(null)
+    setBusy(true)
+    try {
+      const same = await ensureSamePubkey()
+      if (!same.ok) {
+        setError(same.reason)
+        return
+      }
+      const result = await publishRevisionDeletion(session.signer, {
+        relayUrl: group.relayUrl,
+        groupId: group.id,
+        revisionId: revision.id,
+      })
+      if (result.ok) {
+        setNotice(
+          'The deletion request reached the relay. It may keep the revision anyway; copies ' +
+            'on other relays and clients can remain.',
+        )
+        return
+      }
+      const kind = classifyRejection(result.reason)
+      setError(
+        kind === 'permission'
+          ? `The relay did not accept the deletion request: ${result.reason}`
+          : `The deletion request was not delivered: ${result.reason}`,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'signing was cancelled')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const restore = async (revision: Revision) => {
     if (session.status !== 'signed-in') return
     setError(null)
+    setNotice(null)
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -175,13 +272,7 @@ export function HistoryView() {
         {page.title}
       </PageTitle>
 
-      {error ? (
-        <div className="mb-6">
-          <Callout tone="danger" title="That did not work">
-            {error}
-          </Callout>
-        </div>
-      ) : null}
+      {feedback}
 
       {revisions.length > 1 ? (
         <section className="mb-10">
@@ -291,6 +382,17 @@ export function HistoryView() {
                         onClick={() => setSelection({ from: revision.id, to: page.head.id })}
                       >
                         Compare with current
+                      </Button>
+                    ) : null}
+                    {session.status === 'signed-in' &&
+                    session.pubkey === revision.author ? (
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        disabled={busy}
+                        onClick={() => void requestDeletion(revision)}
+                      >
+                        Request deletion
                       </Button>
                     ) : null}
                     {isAdmin ? (

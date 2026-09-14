@@ -1,11 +1,26 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { liveMarkdown } from './markdown-live'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 import { normaliseTaskMarker } from './MarkdownEditor'
+
+// The mention chip and the live editor warm the profile cache via the real
+// store, which would open a WebSocket to VITE_PROFILE_RELAYS (a local relay
+// during development). These tests assert the chip's text, never a fetched
+// name, so the store is replaced to keep the suite off the network.
+vi.mock('../nostr/profile-store', () => ({
+  peekProfile: () => null,
+  primeProfiles: () => {},
+  cacheProfile: () => {},
+  useProfile: () => null,
+  observeProfile: (_pubkey: string, listener: (profile: null) => void) => {
+    listener(null)
+    return () => {}
+  },
+}))
 
 /**
  * `- [<no-break space>] milk` is not a task list item — GFM asks for U+0020 —

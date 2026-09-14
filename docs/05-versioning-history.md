@@ -86,8 +86,19 @@ Features:
 - **Implemented:** an admin deletes an event via NIP-29 `kind 9005`; the group
   relay enforces it. Applies to revisions and comments, with a confirmation
   prompt in the UI.
-- **Open:** a user deleting their *own* revision via NIP-09 `kind 5` — a
-  *request* to relays, to be phrased in the UI as "request deletion".
+- **Implemented:** a user asks the relay to delete their *own* revision via
+  NIP-09 `kind 5`, from that revision's row in the history. It is a *request*,
+  and the UI says so: a relay may keep the event — the NIP-29 relay we run
+  stores it without deleting anything — and copies on other relays and clients
+  remain. What the client keeps is the `kind 5` itself: no tombstone event is
+  written, the skip is re-derived from the request on every read. The revision
+  is left out of the chain, the diff pickers and blame, while a successor whose
+  `parent-rev` names it is re-pointed at the removed revision's nearest
+  surviving ancestor along the first parent, so the chain does not tear. Where
+  the removed revision was a *merge*, the ancestors on its other branches stay
+  referenced as well — otherwise they would resurface as leaves and the page
+  would show a fork nobody created. A request only removes the requester's own
+  revision; the relay enforces nothing here. See also the admin path below.
 - **Open:** hiding a whole page — a new revision with a tombstone tag plus
   `9005` on the predecessors, so that sidebar and search leave it out.
 
