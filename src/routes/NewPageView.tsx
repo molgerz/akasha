@@ -44,6 +44,9 @@ export function NewPageView() {
         pages={space.pages}
         members={spacePeople(space)}
         onSaved={(slug) => navigate(`${base}/${slug}`)}
+        // The way out of a slug collision: the page that already owns the
+        // heading, rather than a dead end at "this name is taken".
+        onOpenPage={(slug) => navigate(`${base}/${slug}`)}
         onCancel={() => navigate(base)}
       />
     </PageFrame>

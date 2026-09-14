@@ -128,4 +128,35 @@ describe('the editor as it is assembled', () => {
 
     act(() => root.unmount())
   })
+
+  it("gives a table's edge the editor's Enter, not the language's", () => {
+    // Both Enter bindings are high precedence and `continueList` is earlier:
+    // for a table it has to decline so the table's own command runs, and only
+    // the assembled editor shows that order. src/ui/markdown-live.ts
+    const TABLE = '| Name | Value |\n| --- | ---: |\n| a | 1 |'
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    let value = TABLE + '\n\n'
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <MarkdownEditor value={value} onChange={(next) => (value = next)} ariaLabel="content" />
+        </ThemeProvider>,
+      )
+    })
+
+    const content = host.querySelector<HTMLElement>('.cm-content')!
+    const view = EditorView.findFromDOM(content)!
+    view.dispatch({ selection: { anchor: TABLE.length } })
+    act(() => {
+      content.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+    })
+
+    expect(view.state.doc.toString()).toBe(TABLE + '\n\n')
+    expect(view.state.doc.lineAt(view.state.selection.main.head).number).toBe(5)
+    act(() => root.unmount())
+  })
 })

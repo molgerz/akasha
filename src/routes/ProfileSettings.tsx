@@ -172,7 +172,8 @@ export function ProfileSettings() {
         <label className="block space-y-1.5">
           <span className="block text-sm font-medium text-fg">Name</span>
           <span className="block text-xs text-fg-subtle">
-            Freely chosen and not unique — the app always shows it next to the npub.
+            Freely chosen and not unique — shown as your name everywhere; your npub is
+            in the tooltip and in full above.
           </span>
           <input
             value={draft.name}

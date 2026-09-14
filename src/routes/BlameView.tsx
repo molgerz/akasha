@@ -3,15 +3,16 @@ import { spaceAccess } from '../domain/space-access'
 import { SpaceHiddenPage } from '../ui/SpaceHiddenNotice'
 import { useSession } from '../session/session'
 import { blame } from '../domain/blame'
-import { shortNpub, toNpub } from '../nostr/profile'
+import { toNpub } from '../nostr/profile'
+import { AuthorName } from '../ui/Author'
 import { PageFrame, PageTitle } from '../ui/layout/PageFrame'
 import { Card, IconButtonLink } from '../ui/controls'
 import { BookIcon, HistoryIcon, PageIcon } from '../ui/icons'
 
 /**
  * Who wrote which line. The attribution is computed from the revision chain,
- * so every line carries an npub — this is one of the screens somebody opens to
- * decide whether to trust a change, and there the key belongs next to the name.
+ * so every line carries its author's key. The column shows the name; the key
+ * stays in the cell's tooltip for whoever opens this screen to check it.
  * docs/06-ui-information-architecture.md
  */
 export function BlameView() {
@@ -97,7 +98,7 @@ export function BlameView() {
                     className={`w-32 px-3 py-1 whitespace-nowrap ${colorOf.get(line.revision.author)}`}
                     title={`${npub} · ${new Date(line.revision.createdAt * 1000).toLocaleString()}`}
                   >
-                    {shortNpub(npub)}
+                    <AuthorName pubkey={line.revision.author} />
                   </td>
                   <td className="w-10 border-r border-line px-2 py-1 text-right text-fg-subtle select-none">
                     {index + 1}

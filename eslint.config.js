@@ -21,8 +21,19 @@ import tseslint from 'typescript-eslint'
  */
 export default tseslint.config(
   // .local/ and .gstack/ hold third-party repos cloned for local dev (see
-  // .gitignore) — their sources are not ours to lint
-  { ignores: ['dist/**', 'coverage/**', 'node_modules/**', '.local/**', '.gstack/**'] },
+  // .gitignore) — their sources are not ours to lint. .worktrees/ holds other
+  // git worktrees of this repo; each carries its own tsconfig and would feed
+  // the TypeScript parser several candidate roots.
+  {
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'node_modules/**',
+      '.local/**',
+      '.gstack/**',
+      '.worktrees/**',
+    ],
+  },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

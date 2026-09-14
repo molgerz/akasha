@@ -63,8 +63,10 @@ export function shortNpub(npub: string): string {
 }
 
 /**
- * Display names are freely chosen and not unique. The UI only ever shows them
- * together with the npub — never alone. docs/06-ui-information-architecture.md
+ * Display names are freely chosen and not unique. The name is the primary
+ * label; the npub is the fallback for a key with no profile, and stays in the
+ * tooltip and the revision details for a check.
+ * docs/06-ui-information-architecture.md
  */
 export function displayName(profile: Profile | null, npub: string): string {
   return profile?.displayName ?? profile?.name ?? shortNpub(npub)

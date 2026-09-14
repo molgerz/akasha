@@ -5,8 +5,15 @@ import { publishRevision } from '../nostr/publish-page'
 import { publishPlacement } from '../nostr/publish-placement'
 import { useSession } from '../session/session'
 import { MarkdownEditor } from './MarkdownEditor'
+import type { EditorHandle } from './MarkdownEditor'
+import {
+  NO_BLOSSOM_SERVER,
+  attachmentMarkdown,
+  attachmentsEnabled,
+  uploadAttachment,
+} from '../nostr/blossom'
 import { hasConflictMarkers, mergeThreeWay } from '../domain/merge'
-import { shortNpub, toNpub } from '../nostr/profile'
+import { displayNameOrNpub } from '../nostr/profile-store'
 import { SignInButton } from './SignInButton'
 import { Button, Callout } from './controls'
 import { HeaderActions } from './layout/PageFrame'
@@ -34,6 +41,8 @@ type Props = {
   overrideParents?: string[]
   onSaved: (slug: string) => void
   onCancel: () => void
+  /** open an existing page — the way out of a slug collision on a new page */
+  onOpenPage?: (slug: string) => void
 }
 
 /**
@@ -116,6 +125,7 @@ export function PageEditor({
   overrideParents,
   onSaved,
   onCancel,
+  onOpenPage,
 }: Props) {
   const { session, ensureSamePubkey } = useSession()
   const [title, setTitle] = useState(page?.title ?? '')
@@ -129,6 +139,10 @@ export function PageEditor({
   const [parentSlug] = useState(page?.parentSlug ?? defaultParentSlug ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const editorHandle = useRef<EditorHandle | null>(null)
+  const fileInput = useRef<HTMLInputElement | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadNote, setUploadNote] = useState<string | null>(null)
 
   if (session.status !== 'signed-in') {
     return (
@@ -146,6 +160,54 @@ export function PageEditor({
   const existing = page ?? (slug.length > 0 ? pages.find((entry) => entry.slug === slug) : undefined)
   const collision = !page && existing !== undefined
 
+  /**
+   * Upload an attachment and insert it at the cursor. Images as ![…](url),
+   * everything else as a link — the file then lives on the Blossom server and
+   * the Nostr event only carries the URL.
+   */
+  const upload = async (files: File[]) => {
+    if (session.status !== 'signed-in' || files.length === 0) return
+    setUploadNote(null)
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const result = await uploadAttachment(session.signer, file)
+        if (!result.ok) {
+          setUploadNote(`${file.name}: ${result.reason}`)
+          return
+        }
+        // Exactly the attachment, no newlines around it: the file picker opens
+        // from `/image` at the start of its line, so the attachment belongs on
+        // that line, and a picture is a block — writing under it opens its own
+        // line (see the block edges in src/ui/markdown-live.ts) instead of a
+        // blank line being laid down in advance.
+        const snippet = attachmentMarkdown(result, file.name)
+        if (editorHandle.current) editorHandle.current.insert(snippet)
+        else setContent((current) => `${current}${snippet}`)
+        // No note on the way out: it stayed up under the editor for the rest of
+        // the session, and the attachment appearing where it was put is the
+        // confirmation. Failures still say so — see the catch below.
+      }
+    } catch (err) {
+      setUploadNote(err instanceof Error ? err.message : 'upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /**
+   * The `/` menu's attachment entry. It is the upload's only affordance since
+   * the toolbar was stripped, so without a Blossom server the reason is shown
+   * where the note sits rather than opening a picker that can only fail.
+   */
+  const openAttach = () => {
+    if (!attachmentsEnabled()) {
+      setUploadNote(NO_BLOSSOM_SERVER)
+      return
+    }
+    fileInput.current?.click()
+  }
+
   const save = async () => {
     setError(null)
     if (title.trim().length === 0) {
@@ -154,6 +216,19 @@ export function PageEditor({
     }
     if (slug.length === 0) {
       setError('No slug can be derived from this title — please use letters or digits.')
+      return
+    }
+    // A new page may not take a slug that is already in use. Without this the
+    // publish would carry the existing page's head as its predecessor and
+    // quietly push a revision onto a page nobody meant to touch. The page's
+    // identity is (group, slug), so the comparison is on the normalised slug
+    // and not on the visible heading. docs/02-data-model-events.md
+    if (collision && existing) {
+      setError(
+        `A page called “${existing.title}” already exists in this space — ` +
+          `both headings resolve to the slug “${slug}”. Open that page instead of ` +
+          'creating a second one; a new page cannot take an existing slug.',
+      )
       return
     }
     if (hasConflictMarkers(content)) {
@@ -169,19 +244,19 @@ export function PageEditor({
       const theirs = live.head
       const merged = mergeThreeWay(baseRevision.content, content, theirs.content, {
         mine: 'your version',
-        theirs: `version by ${shortNpub(toNpub(theirs.author))}`,
+        theirs: `version by ${displayNameOrNpub(theirs.author)}`,
       })
       setBaseRevision(theirs)
       setContent(merged.content)
       setNotice(
         merged.status === 'conflict'
-          ? `${shortNpub(toNpub(theirs.author))} changed this page in the meantime. ` +
+          ? `${displayNameOrNpub(theirs.author)} changed this page in the meantime. ` +
               `${merged.conflicts} spot(s) overlap — please resolve them in the text, ` +
               'remove the markers and save again.'
           : merged.status === 'identical'
-            ? `${shortNpub(toNpub(theirs.author))} saved in the meantime, with the same ` +
+            ? `${displayNameOrNpub(theirs.author)} saved in the meantime, with the same ` +
                 'result. Nothing to do.'
-            : `${shortNpub(toNpub(theirs.author))} changed this page in the meantime. ` +
+            : `${displayNameOrNpub(theirs.author)} changed this page in the meantime. ` +
                 'Both changes were merged — please review and save again.',
       )
       return
@@ -202,8 +277,9 @@ export function PageEditor({
         groupId,
         slug,
         title: title.trim(),
-        // On a slug collision keep the existing page's parent instead of
-        // silently lifting it to the top level.
+        // An existing page keeps its own parent instead of being silently
+        // lifted to the top level. A new page has nothing to inherit: it
+        // reaches this line only without a collision.
         parentSlug: parentSlug.trim() || existing?.parentSlug || null,
         // Carry the sidebar position over. Without this every save would drop
         // the page back into alphabetical order. src/domain/order.ts
@@ -274,10 +350,25 @@ export function PageEditor({
           placeholder="Untitled page"
           className="w-full bg-transparent text-[30px] leading-tight font-semibold tracking-[-0.02em] text-fg placeholder:text-fg-subtle/60 focus:outline-none"
         />
-        {collision ? (
-          <p className="mt-1 text-xs text-warning">
-            “{existing?.title}” already uses this slug. Saving appends another revision to that
-            page instead of creating a second one.
+        {/* A slug collision is not a warning but a refusal — the page cannot
+            be created under this heading at all. Named down to the resolved
+            slug, because the visible title is not what collides: two headings
+            that normalise to the same slug are the same page. The way out is
+            offered right here, since the alternative is retyping the title
+            hoping for a different result. docs/02-data-model-events.md */}
+        {collision && existing ? (
+          <p className="mt-2 text-xs text-danger">
+            “{existing.title}” already uses the slug “{slug}”, so a second page cannot take
+            it.{' '}
+            {onOpenPage ? (
+              <button
+                type="button"
+                onClick={() => onOpenPage(existing.slug)}
+                className="underline underline-offset-2 hover:text-fg"
+              >
+                Open “{existing.title}” instead
+              </button>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -287,7 +378,26 @@ export function PageEditor({
         onChange={setContent}
         ariaLabel="Content in Markdown"
         members={members}
+        handleRef={editorHandle}
+        onAttach={openAttach}
+        onDropFiles={(files) => void upload(files)}
       />
+
+      {/* The file picker the `/` menu's attachment entry opens. Kept out of
+          the flow — the affordance is the menu, not a button. */}
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])]
+          event.target.value = ''
+          void upload(files)
+        }}
+      />
+      {uploading ? <p className="text-xs text-fg-subtle">uploading…</p> : null}
+      {uploadNote ? <p className="text-xs text-fg-subtle">{uploadNote}</p> : null}
 
       {/* The relay's own words, never a paraphrase: with distributed storage
           "saved" must not be claimed before an OK came back, and when it did

@@ -135,6 +135,30 @@
   color: var(--shiki-dark);
 }
 
+/* The read view reproduces the editor's line boxes: the vertical space between
+   two top-level blocks is the empty lines the writer left, drawn by
+   `rehypeBlankLines` as spacers — not a margin the block carries itself. Both
+   would show, and the margin collapses to less than a line, so a single empty
+   line would come out short next to the editor. Only top level: a paragraph
+   inside a quote or a loose list is not a paragraph break and keeps its own
+   spacing. Unlayered, so it wins over the Tailwind margin utilities in the
+   classes. src/ui/markdown-blank-lines.ts, src/ui/Markdown.tsx */
+.md-content > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* A cell with nothing in it has no line box, so an empty row comes out a whole
+   line shorter than the header above it and only grows once something is
+   written in it. A zero-width space gives every cell one without showing
+   anything; `min-height` cannot do it, because it does not apply to table
+   cells. The editor does the same for its own cells, with a `min-height` on the
+   text inside them — src/ui/MarkdownEditor.tsx, docs/13-editing.md */
+.page-table td::after,
+.page-table th::after {
+  content: '\200b';
+}
+
 html,
 body,
 #root {

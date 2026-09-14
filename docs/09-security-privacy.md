@@ -39,12 +39,34 @@
 | Risk | Countermeasure |
 |---|---|
 | XSS through Markdown from arbitrary npubs | `rehype-sanitize` with a strict allowlist, no `dangerouslySetInnerHTML`, no raw HTML, no `javascript:` links |
-| Images/iframes used as trackers | **Implemented:** images from foreign origins are only loaded on click ("load image from example.com"), attachments from our own Blossom server load directly. No iframes |
+| Images/iframes used as trackers | **Accepted trade:** every image is loaded directly, whatever host it points at — so a host learns the reader's IP, which page is being read and when, and can count reads. No iframes. See "Images are loaded directly" below |
 | Forged `h` tags (an event from another group smuggled in) | Checked after loading: `h` must match the open space, otherwise the event is discarded |
 | Forgetting to verify signatures | Verification is enforced in the data layer, not optional per call |
-| Impersonation via display names | The npub is always shown alongside; the member badge only appears for entries in `39002` |
+| Impersonation via display names | The npub is the truth and stays one hover or one click away — the author tooltip, a revision's Details view, `/settings/profile`; the member badge only appears for entries in `39002` |
 | Spam in open spaces | Relay rate limits + moderated deletion (`9005`) + a "members only" UI filter |
 | Key theft through the app | No handling of nsec at all. NIP-07/NIP-46 only |
+
+## Images are loaded directly
+
+Loading an image from a foreign host tells that host who is reading which page,
+and when: a page with a picture on it is a read receipt, and a 1×1 image is a
+read counter. The app used to gate that — an image from anywhere but our own
+Blossom server was only fetched once the reader clicked it ("load image from
+example.com").
+
+**Decision (2026-09-12): the gate is gone.** A wiki whose pictures are missing
+until each of them has been clicked is not the page, and reading the page is what
+the app is for. Every image is loaded directly now, in the editor and on the
+rendered page alike.
+
+**What that costs, stated plainly:** any member who can write a page can put an
+image URL into it, and every reader of that page then announces themselves to
+that host — IP, referrer, time. What still limits it is structural rather than
+technical: the page is only reachable from inside the group, the relay belongs to
+the deployment, and the images that matter are attachments on our own Blossom
+server. Bringing the gate back for foreign origins is a small change: the two
+places that draw an image are `MarkdownImage` in `src/ui/Markdown.tsx` and
+`ImageWidget` in `src/ui/markdown-live.ts`.
 
 ## Privacy note for users
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { AkashaMark } from '../AkashaMark'
 import { ThemeToggle } from '../ThemeToggle'
 import { UserChip } from '../UserChip'
 import { IconButton } from '../controls'
@@ -96,9 +97,12 @@ export function Topbar({
 
         <Link
           to="/"
-          className="truncate rounded-md px-1.5 py-1 text-sm font-semibold tracking-[-0.01em] text-fg hover:bg-surface-hover"
+          className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-semibold tracking-[-0.01em] text-fg hover:bg-surface-hover"
         >
-          Akasha
+          {/* The mark and the wordmark are one link; the mark is aria-hidden,
+              so the accessible name stays exactly "Akasha". */}
+          <AkashaMark className="size-5" />
+          <span className="truncate">Akasha</span>
         </Link>
       </div>
 

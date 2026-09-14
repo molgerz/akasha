@@ -2,8 +2,8 @@ import { useNavigate } from 'react-router-dom'
 import { useSpaceRoute } from './space-route'
 import { Markdown } from '../ui/Markdown'
 import { Byline } from '../ui/Byline'
+import { AuthorName } from '../ui/Author'
 import { useSession } from '../session/session'
-import { shortNpub, toNpub } from '../nostr/profile'
 import { SignInButton } from '../ui/SignInButton'
 import { Comments } from '../ui/Comments'
 import { SpaceHiddenNotice } from '../ui/SpaceHiddenNotice'
@@ -178,7 +178,7 @@ export function PageView() {
               }
             >
               Several people saved at the same time. The newest one is shown (
-              {shortNpub(toNpub(page.head.author))}); all versions are in the history.
+              <AuthorName pubkey={page.head.author} />); all versions are in the history.
             </Callout>
           </div>
         ) : null}

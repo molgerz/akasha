@@ -84,7 +84,9 @@ describe('the page, told the same', () => {
   it('reads a `-` under a paragraph as a paragraph', () => {
     const rendered = page('Shopping\n-')
     expect(rendered.querySelector('h2')).toBeNull()
-    expect(rendered.querySelector('p')?.textContent).toBe('Shopping\n-')
+    // the newline under it is a line break (see below); the h2 that must not be
+    // there is the point
+    expect(rendered.querySelector('p br')).not.toBeNull()
   })
 
   it('reads a line of dashes under a paragraph as a divider', () => {
@@ -97,5 +99,26 @@ describe('the page, told the same', () => {
   it('still makes a heading from a #, and a task from a box', () => {
     expect(page('# Title').querySelector('h1')?.textContent).toBe('Title')
     expect(page('- [ ] milk').querySelectorAll('input')).toHaveLength(1)
+  })
+})
+
+describe('the page, on a single newline', () => {
+  it('draws it as a line break, the way the editor does', () => {
+    const rendered = page('Hallo\nTest')
+    expect(rendered.querySelectorAll('p')).toHaveLength(1)
+    // one paragraph with a <br> in it, exactly the two lines the editor draws
+    expect(rendered.querySelectorAll('p br')).toHaveLength(1)
+  })
+
+  it('draws it inside a list item, a quote and a link too', () => {
+    for (const doc of ['- first\n  second', '> first\n> second', '[first\nsecond](https://example.com)']) {
+      expect(page(doc).querySelector('br')).not.toBeNull()
+    }
+  })
+
+  it('does not touch the newlines inside a fenced code block', () => {
+    const rendered = page('```\nHallo\nTest\n```')
+    expect(rendered.querySelector('br')).toBeNull()
+    expect(rendered.querySelector('code')?.textContent).toContain('Hallo\nTest')
   })
 })

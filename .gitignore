@@ -10,6 +10,9 @@ db/
 # local Claude Code settings
 .claude/settings.local.json
 
+# scratch space for throwaway renders and previews
+.scratch/
+
 # macOS
 .DS_Store
 

@@ -20,7 +20,9 @@ import { syntaxTree, syntaxHighlighting, HighlightStyle } from '@codemirror/lang
 import { tags } from '@lezer/highlight'
 import { useTheme } from '../theme/theme'
 import { liveMarkdown } from './markdown-live'
+import { needsLineUnderTable } from './editor-table'
 import { emojiCompletion, mentionCompletion } from './editor-complete'
+import { slashInsertCompletion } from './editor-slash'
 import { NO_SETEXT_HEADINGS } from './markdown-flavour'
 
 /**
@@ -215,6 +217,224 @@ function editorTheme(dark: boolean) {
       },
       '.cm-md-hr-raw': { color: 'var(--fg-subtle)' },
 
+      // — tables and images —
+      // The same drawing as the page: one rule under each row, a header band,
+      // `px-3 py-2` cells at 14px, a bordered card around the table, and a
+      // picture with the same border and radius. Read against `PAGE` and the
+      // `table`/`th`/`td`/`img` components in `src/ui/Markdown.tsx` — when one
+      // of the two changes, the other has to follow.
+      '.cm-md-table': {
+        position: 'relative',
+        // No margin of its own: the air around a block belongs to the lines next
+        // to it. See the note on the line rules below — a margin here would be a
+        // strip inside the widget's own line, which the writer can click into
+        // but not write in.
+        margin: '0',
+        border: '1px solid var(--line)',
+        borderRadius: '8px',
+        // Not clipped: a row's handle sits on the left edge and a column's on
+        // the top edge, both just outside the border. The rounded corners come
+        // from the four corner cells instead, which is also what makes the
+        // header band follow them.
+        overflow: 'visible',
+        width: '100%',
+        boxSizing: 'border-box',
+        // The line this widget sits in is `pre-wrap`; a grid inside it would
+        // inherit that and break on every newline of its own DOM.
+        whiteSpace: 'normal',
+      },
+      '.cm-md-table-row': { display: 'grid', position: 'relative' },
+      // The air under a picture sits on the **line after** it and never inside
+      // the picture's own line. Inside, it was a strip below the card that took
+      // a click but nothing typed: the caret went to the block's edge, which is
+      // not where the writer clicked.
+      //
+      // Under a table the line directly below is the table's own blank line — it
+      // has to stay blank, or a paragraph written there is read as another row.
+      // It is a line the writer can see and cannot write in, which is the dead
+      // strip this avoids. So it is given no height at all: it disappears from
+      // the picture, and the air moves to the line under *it*, which is the line
+      // the writer really writes on. src/ui/editor-table.ts, separatorLine
+      //
+      // Above a block there is no such gap on purpose: the line *before* it
+      // cannot be reached from CSS without nesting `:has()`, which is not
+      // allowed, and a gap that belongs to neither line is exactly the dead strip
+      // this fixes. The paragraph's own line height leaves the air.
+      '.cm-line:has(> .cm-md-image) + .cm-line': { paddingTop: '1rem' },
+      '.cm-md-table-separator': {
+        height: '0',
+        minHeight: '0',
+        lineHeight: '0',
+        padding: '0',
+        overflow: 'hidden',
+      },
+      '.cm-line:has(> .cm-md-table) + .cm-line + .cm-line': { paddingTop: '1rem' },
+      // A block formatting context, so nothing about the widget can escape its
+      // line — and so the line's own height is the widget's.
+      '.cm-line:has(> .cm-md-table), .cm-line:has(> .cm-md-image)': { display: 'flow-root' },
+      // CodeMirror brackets a replaced widget with a zero-width buffer element
+      // so the caret has a DOM position beside it. Around a *block* widget that
+      // buffer becomes a line box of its own — one whole empty line above the
+      // card and one below, which is what made a table or a picture look as
+      // though blank lines had been written around it. Nothing needs it there:
+      // the widget is atomic and the caret steps over it.
+      '.cm-line:has(> .cm-md-table) > .cm-widgetBuffer, .cm-line:has(> .cm-md-image) > .cm-widgetBuffer':
+        { display: 'none' },
+      '.cm-md-table-cell': {
+        position: 'relative',
+        padding: '0.5rem 0.75rem',
+        fontSize: '14px',
+        lineHeight: '1.5',
+        // A rule under every row and between every column: the grid reads as a
+        // grid, which is what makes an empty cell a place rather than a gap.
+        // The last column has none, so the card's own border is not doubled.
+        borderBottom: '1px solid var(--line)',
+        borderRight: '1px solid var(--line)',
+        color: 'var(--fg-muted)',
+        overflowWrap: 'anywhere',
+      },
+      '.cm-md-table-cell-last': { borderRight: 'none' },
+      '.cm-md-table-head .cm-md-table-cell': {
+        backgroundColor: 'var(--surface-1)',
+        color: 'var(--fg)',
+        fontWeight: '600',
+        textAlign: 'left',
+      },
+      '.cm-md-table-row:last-child .cm-md-table-cell': { borderBottom: 'none' },
+      '.cm-md-table-head .cm-md-table-cell-first': { borderTopLeftRadius: '8px' },
+      '.cm-md-table-head .cm-md-table-cell-last': { borderTopRightRadius: '8px' },
+      '.cm-md-table-row:last-child .cm-md-table-cell-first': { borderBottomLeftRadius: '8px' },
+      '.cm-md-table-row:last-child .cm-md-table-cell-last': { borderBottomRightRadius: '8px' },
+      // A cell with nothing in it has no line box, so it would come out a whole
+      // line shorter than the row above it — and it would only grow once
+      // somebody typed into it. One line's height is the floor, not the
+      // ceiling: the cell still grows with whatever is written in it.
+      '.cm-md-table-text': { minHeight: '1.5em' },
+      // A cell's editing surface: exactly over its text, transparent so the text
+      // shows through, and focusable — which a hidden element would not be, and
+      // Tab has to reach it. Only the caret makes it visible; `focus-within`
+      // swaps the two, so there is no class to toggle from JS.
+      '.cm-md-table-input': {
+        position: 'absolute',
+        inset: '0',
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '0.5rem 0.75rem',
+        border: 'none',
+        background: 'transparent',
+        font: 'inherit',
+        fontSize: '14px',
+        lineHeight: '1.5',
+        color: 'inherit',
+        textAlign: 'inherit',
+        opacity: '0',
+        outline: 'none',
+      },
+      '.cm-md-table-cell:focus-within .cm-md-table-text': { visibility: 'hidden' },
+      '.cm-md-table-cell:focus-within .cm-md-table-input': {
+        opacity: '1',
+        boxShadow: 'inset 0 0 0 2px var(--accent)',
+      },
+
+      // — the row and column handles —
+      // One click into a cell and two icons appear: one on the table's left
+      // edge level with that row, one on its top edge above that column. They
+      // sit in the margin the table already has, so nothing shifts, and a click
+      // opens the menu a right-click opens — narrowed to that row or column.
+      '.cm-md-table-handle': {
+        display: 'none',
+        position: 'absolute',
+        zIndex: '40',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '18px',
+        height: '18px',
+        padding: '0',
+        border: '1px solid var(--line-strong)',
+        borderRadius: '5px',
+        backgroundColor: 'var(--surface-2)',
+        color: 'var(--fg-subtle)',
+        cursor: 'pointer',
+      },
+      '.cm-md-table-handle-visible': { display: 'flex' },
+      '.cm-md-table-handle:hover': {
+        backgroundColor: 'var(--surface-selected)',
+        color: 'var(--fg)',
+      },
+      '.cm-md-table-handle-row': { left: '-9px', top: '50%', transform: 'translateY(-50%)' },
+      '.cm-md-table-handle-column': {
+        top: '-9px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+      },
+      '.cm-md-table-handle svg': { width: '12px', height: '12px' },
+
+      // — the table's right-click menu —
+      '.cm-md-table-menu': {
+        position: 'absolute',
+        zIndex: '50',
+        minWidth: '11rem',
+        padding: '0.25rem',
+        border: '1px solid var(--line-strong)',
+        borderRadius: '8px',
+        backgroundColor: 'var(--surface-2)',
+        boxShadow: '0 8px 24px rgb(0 0 0 / 0.12)',
+      },
+      '.cm-md-table-menu-item': {
+        display: 'block',
+        width: '100%',
+        padding: '0.35rem 0.6rem',
+        border: 'none',
+        borderRadius: '5px',
+        background: 'none',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '13px',
+        textAlign: 'left',
+        color: 'var(--fg)',
+        cursor: 'pointer',
+      },
+      '.cm-md-table-menu-item:hover:not(:disabled)': { backgroundColor: 'var(--surface-selected)' },
+      '.cm-md-table-menu-item:disabled': { color: 'var(--fg-subtle)', cursor: 'default' },
+      '.cm-md-table-menu-current': { fontWeight: '600' },
+
+      // — images —
+      // A block, and `fit-content` wide: a picture is a block of its own and
+      // nothing is written beside it, but the box a click selects and the
+      // resize handle is pinned to still has to be the size of the picture and
+      // not of the measure.
+      '.cm-md-image': {
+        position: 'relative',
+        display: 'block',
+        width: 'fit-content',
+        maxWidth: '100%',
+        // as above: the air belongs to the neighbouring lines
+        margin: '0',
+        whiteSpace: 'normal',
+      },
+      '.cm-md-image img': {
+        display: 'block',
+        maxWidth: '100%',
+        borderRadius: '8px',
+        border: '1px solid var(--line)',
+      },
+      '.cm-md-image-selected': {
+        outline: '2px solid var(--accent)',
+        outlineOffset: '2px',
+        borderRadius: '8px',
+      },
+      '.cm-md-image-handle': {
+        display: 'none',
+        position: 'absolute',
+        right: '-7px',
+        bottom: '-7px',
+        width: '14px',
+        height: '14px',
+        borderRadius: '50%',
+        backgroundColor: 'var(--accent)',
+        border: '2px solid var(--surface-2)',
+        cursor: 'nwse-resize',
+      },
+      '.cm-md-image-selected .cm-md-image-handle': { display: 'block' },
       // — mentions —
       // A chip, not a link: it names a person, and clicking it in the editor
       // should place the cursor rather than navigate.
@@ -227,7 +447,7 @@ function editorTheme(dark: boolean) {
         fontSize: '0.95em',
       },
 
-      // — the @ and : dropdowns —
+      // — the @, : and / dropdowns —
       // CodeMirror's default popup is styled for a code editor and stays light
       // in dark mode. It gets the app's tokens instead. docs/12-theming.md
       '.cm-tooltip.cm-tooltip-autocomplete': {
@@ -445,6 +665,8 @@ type Props = {
   handleRef?: { current: EditorHandle | null }
   /** files dropped onto the editor */
   onDropFiles?: (files: File[]) => void
+  /** the `/` menu's attachment entry — opens the file picker */
+  onAttach?: () => void
 }
 
 export function MarkdownEditor({
@@ -452,9 +674,10 @@ export function MarkdownEditor({
   onChange,
   ariaLabel,
   members,
-  placeholder = 'Start writing. “# ” makes a heading, “- ” a list, “@” mentions somebody.',
+  placeholder = 'Start writing. “# ” makes a heading, “- ” a list, “@” mentions somebody, “/” inserts a table or a file.',
   handleRef,
   onDropFiles,
+  onAttach,
 }: Props) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
@@ -462,6 +685,11 @@ export function MarkdownEditor({
   onChangeRef.current = onChange
   const onDropRef = useRef(onDropFiles)
   onDropRef.current = onDropFiles
+  // The completion source is captured when the editor is built, once. Reading
+  // the callback through a ref keeps a later session (an account switch, a
+  // different Blossom server) from being frozen into the first render.
+  const onAttachRef = useRef(onAttach)
+  onAttachRef.current = onAttach
   // Read through a ref, so members arriving from the relay after mount are
   // offered without rebuilding the editor.
   const membersRef = useRef(members ?? [])
@@ -508,7 +736,11 @@ export function MarkdownEditor({
         normaliseTaskMarker,
         liveMarkdown,
         autocompletion({
-          override: [mentionCompletion(() => membersRef.current), emojiCompletion],
+          override: [
+            mentionCompletion(() => membersRef.current),
+            emojiCompletion,
+            slashInsertCompletion(() => onAttachRef.current?.()),
+          ],
           icons: false,
           activateOnTyping: true,
         }),
@@ -588,12 +820,37 @@ export function MarkdownEditor({
       onMouseDown={(event) => {
         // A click in the empty space below the last line puts the cursor at
         // the end, the way clicking under the last paragraph of a document
-        // does. Without this the grown-out area is dead to the touch.
-        if (event.target !== event.currentTarget) return
+        // does. Without this the grown-out area is dead to the touch — and it
+        // is the only way to reach the line a table needs under it when the
+        // page stops at the grid, which pages written before that line are.
+        //
+        // The empty space is the host itself, but also the editor and its
+        // scroller: CodeMirror draws those round its content, so "the target is
+        // the host" is too narrow a test and the click was ignored.
+        const target = event.target as HTMLElement
+        // A widget owns its own events (a cell, a handle, the table's menu), so
+        // those are left alone. The menu is moved near the click, which can put
+        // it below the last line as well.
+        if (target.closest('.cm-md-table, .cm-md-image')) return
         const instance = view.current
         if (!instance) return
+        const lines = instance.contentDOM.querySelectorAll('.cm-line')
+        const last = lines[lines.length - 1]
+        if (last && event.clientY < last.getBoundingClientRect().bottom) return
         event.preventDefault()
-        instance.dispatch({ selection: { anchor: instance.state.doc.length } })
+        const end = instance.state.doc.length
+        if (needsLineUnderTable(instance.state)) {
+          // The page stops at the grid: there is no line under it to put the
+          // caret on, so the click opens the ones the table needs — the blank
+          // line that keeps a paragraph out of the table, and the line itself.
+          instance.dispatch({
+            changes: { from: end, insert: '\n\n' },
+            selection: { anchor: end + 2 },
+            userEvent: 'input',
+          })
+        } else {
+          instance.dispatch({ selection: { anchor: end } })
+        }
         instance.focus()
       }}
     />
