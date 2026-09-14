@@ -7,7 +7,7 @@ import type { Page } from '../domain/pages'
 import type { Revision } from '../domain/revision'
 import type { TreeMove } from '../domain/move-tree'
 import { PageMoveMenu } from './PageMoveMenu'
-import { moveEntries } from './move-page'
+import { moveEntries, moveTargets } from './move-page'
 
 /**
  * The menu is the only way to move a page without a pointer that can drag, so
@@ -47,6 +47,17 @@ function render(page: Page, pages = PAGES, onMove: (move: TreeMove) => void = vi
   return host
 }
 
+/**
+ * Typing into a controlled input. Assigning `value` alone never reaches React:
+ * it tracks the value through its own setter and reads an unchanged one as no
+ * change, so the native setter has to be called before the event is fired.
+ */
+function typeInto(field: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  setter.call(field, value)
+  field.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 const pageOf = (slug: string, pages = PAGES) => pages.find((page) => page.slug === slug)!
 const trigger = (host: HTMLElement) => host.querySelector('button')!
 const items = (host: HTMLElement) => [...host.querySelectorAll('[role="menuitem"]')] as HTMLButtonElement[]
@@ -80,7 +91,7 @@ describe('PageMoveMenu', () => {
     expect(trigger(host).disabled).toBe(false)
   })
 
-  it('opens on a click and offers the four steps', () => {
+  it('opens on a click and offers the four steps, plus the long way', () => {
     const host = render(pageOf('b'))
     act(() => trigger(host).click())
     expect(items(host).map((item) => item.textContent)).toEqual([
@@ -88,6 +99,7 @@ describe('PageMoveMenu', () => {
       'Move down',
       'Move under A',
       'Move out',
+      'Move to…',
     ])
   })
 
@@ -142,5 +154,63 @@ describe('PageMoveMenu', () => {
     const host = render(pageOf('a', alone), alone)
     expect(trigger(host).disabled).toBe(true)
     expect(trigger(host).title).toContain('nowhere to move it')
+  })
+
+  it('offers every page it may land under, and the top level when it is nested', () => {
+    const host = render(pageOf('x'))
+    act(() => trigger(host).click())
+    act(() => items(host).find((item) => item.textContent === 'Move to…')!.click())
+    expect(items(host).map((item) => item.textContent)).toEqual(['Top level', 'A'])
+  })
+
+  it('files the page under the destination that was picked', () => {
+    const onMove = vi.fn()
+    const host = render(pageOf('x'), PAGES, onMove)
+    act(() => trigger(host).click())
+    act(() => items(host).find((item) => item.textContent === 'Move to…')!.click())
+    act(() => items(host).find((item) => item.textContent === 'A')!.click())
+    // a parent, not a position: the new level sorts it by title, exactly as a
+    // drop onto that row would
+    expect(onMove).toHaveBeenCalledWith({ parentSlug: 'a', order: null })
+  })
+
+  it('filters the destinations by name, and says so when none is left', () => {
+    const host = render(pageOf('x'))
+    act(() => trigger(host).click())
+    act(() => items(host).find((item) => item.textContent === 'Move to…')!.click())
+    act(() => typeInto(host.querySelector('input')!, 'zz'))
+    expect(items(host)).toHaveLength(0)
+    expect(host.textContent).toContain('no page matches')
+  })
+
+  it('closes the whole menu on Escape, not just the destination list', () => {
+    const host = render(pageOf('x'))
+    act(() => trigger(host).click())
+    act(() => items(host).find((item) => item.textContent === 'Move to…')!.click())
+    act(() => {
+      host.querySelector('input')!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+    })
+    expect(host.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger(host))
+  })
+})
+
+describe('moveTargets', () => {
+  it('leaves out the page itself, its own subtree and the parent it has', () => {
+    const deep = tree(['a', null], ['b', null], ['x', 'b'], ['deep', 'x'])
+    // for `b`: not itself, not x or deep (its subtree), and it has no parent
+    expect(moveTargets(deep, 'b').map((target) => target.slug)).toEqual(['a'])
+  })
+
+  it('offers the top level only to a page that is not already there', () => {
+    expect(moveTargets(PAGES, 'x')[0]).toMatchObject({ slug: null, title: 'Top level' })
+    expect(moveTargets(PAGES, 'a').some((target) => target.slug === null)).toBe(false)
+  })
+
+  it('has nothing to offer when the space holds a single page', () => {
+    const alone = tree(['a', null])
+    expect(moveTargets(alone, 'a')).toEqual([])
   })
 })

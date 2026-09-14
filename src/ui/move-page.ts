@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { classifyRejection } from '../nostr/client'
 import { publishPlacement } from '../nostr/publish-placement'
 import { useSession } from '../session/session'
-import { canMoveUnder } from '../domain/pages'
+import { buildTree, canMoveUnder, flattenTree } from '../domain/pages'
 import { planMove } from '../domain/move-tree'
 import type { MoveDirection, TreeMove } from '../domain/move-tree'
 import type { Page } from '../domain/pages'
@@ -141,4 +141,36 @@ export function moveEntries(pages: Page[], slug: string): MoveEntry[] {
     if (move && direction === 'out' && parent) label = `Move out of ${parent.title}`
     return { direction, label, move }
   })
+}
+
+/** A page the move menu offers as a new parent, at its depth in the tree. */
+export type MoveTarget = { slug: string | null; title: string; depth: number }
+
+/**
+ * Every page `slug` may be filed under, plus the top level, in tree order.
+ *
+ * The four steps reach a neighbour; this reaches the other end of the wiki,
+ * which with a mouse is one drag and without one would otherwise be a dozen
+ * repeats of "move down". Dragging has no equivalent of it — that is the point,
+ * not an oversight: a drag can only end somewhere the pointer can get to, and a
+ * list can name a row that is scrolled away or folded shut.
+ *
+ * What is left out is left out for the same reasons a drop is refused rather
+ * than reported as an error afterwards: the page itself, its own subtree (the
+ * branch would point into itself and drop out of the tree), and the parent it
+ * already has, because filing it there publishes an event that changes nothing.
+ */
+export function moveTargets(pages: Page[], slug: string): MoveTarget[] {
+  const page = pages.find((entry) => entry.slug === slug)
+  if (!page) return []
+
+  const targets: MoveTarget[] = []
+  if (page.parentSlug !== null) targets.push({ slug: null, title: 'Top level', depth: 0 })
+
+  for (const node of flattenTree(buildTree(pages))) {
+    if (node.slug === slug || node.slug === page.parentSlug) continue
+    if (!canMoveUnder(pages, slug, node.slug)) continue
+    targets.push({ slug: node.slug, title: node.title, depth: node.depth + 1 })
+  }
+  return targets
 }
