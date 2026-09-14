@@ -28,7 +28,8 @@ import {
 type Props = {
   group: GroupAddress | null
   space: SpaceSnapshot
-  snapshot: RelaySnapshot
+  /** null while no relay is being talked to at all — see Topbar's own prop. */
+  snapshot: RelaySnapshot | null
   info: RelayInfo | null
   /**
    * /settings/* — including /settings/spaces/:group, which reuses the
@@ -369,7 +370,7 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
         </NavRow>
       </div>
 
-      <RelayStatusBadge snapshot={snapshot} info={info} />
+      {snapshot ? <RelayStatusBadge snapshot={snapshot} info={info} /> : null}
     </nav>
   )
 }
