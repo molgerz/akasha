@@ -24,22 +24,10 @@ export type GroupAddress = {
  * `[::1]` is in the set on purpose: a dev relay bound to IPv6 is reached as
  * `[::1]:8080` and is no less local than `127.0.0.1`.
  *
- * The port is only shape-checked here (`\d{1,5}` still admits `:99999`);
- * `normalizeHost` is what rejects an out-of-range port.
+ * This only names the shapes that count as local; it never sees an
+ * unvalidated port, because `isLocalRelayHost` normalises first.
  */
-const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/
-
-/**
- * Whether this host may be reached over plaintext `ws://`. Exported so every
- * place that needs the distinction asks the same question — a second, inline
- * copy of the condition is exactly how CON-45 started.
- *
- * Lowercases first so the predicate is correct on its own; hosts coming out
- * of `normalizeHost` are already lowercase.
- */
-export function isLocalRelayHost(host: string): boolean {
-  return LOCAL_HOST.test(host.toLowerCase())
-}
+const LOCAL_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/
 
 /**
  * Validates the shape of the host part and returns it canonicalised, or null.
@@ -55,19 +43,52 @@ export function isLocalRelayHost(host: string): boolean {
  * `exämple.example` no longer equals its input and is rejected. IDN is out of
  * scope here rather than silently half-supported.
  *
- * A default port written out (`example.com:443`) is dropped by `URL` and so
- * rejected too — a needless way to write the address, and not worth a special
- * case inside a security check.
+ * Idempotent: feeding a host this returned back in yields the same host, so
+ * callers may normalise defensively without having to know whether someone
+ * already did.
  */
 function normalizeHost(host: string): string | null {
   if (host.length === 0) return null
+  const lower = host.toLowerCase()
   try {
-    const url = new URL(`https://${host}`)
-    // the host carries no path/query/userinfo; URL also normalises case
-    return url.host === host.toLowerCase() ? url.host : null
+    const url = new URL(`https://${lower}`)
+    // equal means the host carries no path, query or userinfo: whatever a
+    // connection would read as the host is exactly what was written
+    if (url.host === lower) return url.host
+    // `URL` drops a port that is the default for the scheme it was handed, so
+    // `https://<host>:443` parses back without the `:443`. That is the one
+    // disagreement between input and parse that is not a confusion — the port
+    // was written out, it is in range, and it names the same endpoint — and
+    // dropping it would be wrong rather than merely strict, because a local
+    // host keeps its port into a `ws://` URL, where `:443` is not the default
+    // and `ws://localhost:443` is a different connection than `ws://localhost`.
+    // Reached in practice: `my-spaces.ts` and `CreateSpaceForm.tsx` derive this
+    // host by stripping the scheme off `DEFAULT_RELAY_URL`, so a deployment
+    // whose `VITE_RELAY_URL` spells the port out produces exactly this shape.
+    // The comparison stays exact, so a padded `:0443` is still rejected.
+    if (url.port === '' && `${url.host}:443` === lower) return lower
+    return null
   } catch {
     return null
   }
+}
+
+/**
+ * Whether this host may be reached over plaintext `ws://`. Exported so every
+ * place that needs the distinction asks the same question — a second, inline
+ * copy of the condition is exactly how CON-45 started.
+ *
+ * Normalises before matching rather than assuming a validated host, so the
+ * answer is correct for whatever a caller holds. Without that the regex alone
+ * answers `true` for `localhost:99999`, `localhost:65536` and `localhost:00000`
+ * — ports no connection can be made to — and a caller that had not already run
+ * the host through `normalizeHost` would pick `ws://` for them. It also keeps
+ * the port's range check in one place: `URL` decides it, here and in
+ * `parseGroupAddress` alike.
+ */
+export function isLocalRelayHost(host: string): boolean {
+  const normalized = normalizeHost(host)
+  return normalized !== null && LOCAL_HOST.test(normalized)
 }
 
 /**

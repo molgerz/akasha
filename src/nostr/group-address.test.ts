@@ -11,6 +11,9 @@ describe('parseGroupAddress', () => {
     '127.0.0.1.evil.example',
     'localhostile.example',
     '127.0.0.1.attacker.tld',
+    // with a port, because a fix that stripped the port before matching would
+    // pass every row above and still downgrade this one
+    'localhost.evil.example:8080',
   ])('connects to %s over wss, not ws', (host) => {
     const group = parseGroupAddress(`${host}'engineering`)
     expect(group).toEqual({ host, id: 'engineering', relayUrl: `wss://${host}` })
@@ -22,6 +25,11 @@ describe('parseGroupAddress', () => {
     ['127.0.0.1:8080', 'ws://127.0.0.1:8080'],
     // a dev relay bound to IPv6 is as local as one bound to IPv4
     ['[::1]:8080', 'ws://[::1]:8080'],
+    ['[::1]', 'ws://[::1]'],
+    // `URL` drops a written-out `:443`, being https' default port. It has to
+    // survive anyway: under ws:// it is not the default, so dropping it would
+    // silently move the connection to port 80.
+    ['localhost:443', 'ws://localhost:443'],
   ])('still reaches the dev relay on %s over ws', (host, relayUrl) => {
     expect(parseGroupAddress(`${host}'engineering`)).toEqual({
       host,
@@ -43,8 +51,24 @@ describe('parseGroupAddress', () => {
     // fails, so this is what actually arrives here. It used to throw URIError
     // out of render — a white screen.
     ["%E0%A4%A'group", 'a malformed percent escape'],
+    ["localhost:99999'engineering", 'a port above 65535'],
+    ["localhost:65536'engineering", 'a port one past the maximum'],
+    // the `:443` case above accepts the port as written, not any spelling of
+    // it: input and parse still have to agree exactly
+    ["localhost:0443'engineering", 'a zero-padded port'],
   ])('rejects %j — %s', (raw) => {
     expect(parseGroupAddress(raw)).toBeNull()
+  })
+
+  it('keeps the port of a host that is not local', () => {
+    expect(parseGroupAddress("evil.example:8080'engineering")).toEqual({
+      host: 'evil.example:8080',
+      id: 'engineering',
+      relayUrl: 'wss://evil.example:8080',
+    })
+    expect(parseGroupAddress("relay.example:443'engineering")?.relayUrl).toBe(
+      'wss://relay.example:443',
+    )
   })
 
   it('normalises the case of the host, as a connection would', () => {
@@ -79,12 +103,18 @@ describe('parseGroupAddress', () => {
 })
 
 describe('isLocalRelayHost', () => {
-  it.each(['localhost', 'localhost:8080', '127.0.0.1', '127.0.0.1:8080', '[::1]', '[::1]:8080'])(
-    'holds for %s',
-    (host) => {
-      expect(isLocalRelayHost(host)).toBe(true)
-    },
-  )
+  it.each([
+    'localhost',
+    'localhost:8080',
+    '127.0.0.1',
+    '127.0.0.1:8080',
+    '[::1]',
+    '[::1]:8080',
+    'localhost:443',
+    'LocalHost:8080',
+  ])('holds for %s', (host) => {
+    expect(isLocalRelayHost(host)).toBe(true)
+  })
 
   it.each([
     'localhost.evil.example',
@@ -94,6 +124,22 @@ describe('isLocalRelayHost', () => {
     'notlocalhost',
     '127.0.0.10',
   ])('does not hold for %s', (host) => {
+    expect(isLocalRelayHost(host)).toBe(false)
+  })
+
+  // The predicate is exported for callers that hold a host from anywhere, not
+  // only for `parseGroupAddress`, which has already validated one. So it has to
+  // answer for itself rather than assume: on the bare regex every row here is
+  // `true`, and a caller would pick ws:// for a host no connection can be made
+  // to — or, on the last two, for a string that is not a host at all.
+  it.each([
+    'localhost:99999',
+    'localhost:65536',
+    'localhost:00000',
+    'localhost:0443',
+    'localhost/evil.example',
+    '',
+  ])('does not hold for %j, which is not a reachable host', (host) => {
     expect(isLocalRelayHost(host)).toBe(false)
   })
 })
