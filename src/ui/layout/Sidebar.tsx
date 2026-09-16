@@ -14,6 +14,7 @@ import { useSession } from '../../session/session'
 import { useMovePage } from '../move-page'
 import { InitialsDisc, SectionLabel } from '../controls'
 import {
+  ArchiveIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   HomeIcon,
@@ -129,11 +130,14 @@ function NavRow({
   to,
   icon,
   end = false,
+  trailing,
   children,
 }: {
   to: string
   icon: ReactNode
   end?: boolean
+  /** Right-aligned, for a count the label would otherwise have to carry. */
+  trailing?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -149,7 +153,8 @@ function NavRow({
       }
     >
       {icon}
-      <span className="truncate">{children}</span>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {trailing}
     </NavLink>
   )
 }
@@ -169,6 +174,9 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
     space.pages,
   )
   const forcedOpen = pathToActive(nodes, slug)
+  // Counted off `space.pages`, not off the tree: an archived page is exactly
+  // the one the tree leaves out. src/domain/pages.ts
+  const archivedCount = space.pages.filter((page) => page.archived).length
 
   // Dragging a page onto another one files it there, dragging it into the gap
   // between two rows puts it at that position of their level — the same two
@@ -357,6 +365,28 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
 
             {busySlug ? <div className="px-2 py-1 text-xs text-fg-subtle">moving…</div> : null}
             {error ? <div className="px-2 py-1 text-xs text-danger">{error}</div> : null}
+          </div>
+
+          {/* Directly under the tree, and outside its scroll area, because that
+              is the question it answers: the page is not in this list, so where
+              is it.
+              **Always shown, empty or not.** Hiding it until the space has its
+              first archived page was the obvious saving and the wrong one: the
+              row would only appear to someone who already knew the way, which
+              is the opposite of what a place to find things is for. The count
+              is what appears and disappears. src/routes/ArchiveView.tsx */}
+          <div className="border-t border-line px-2 py-1.5">
+            <NavRow
+              to={`${base}/archive`}
+              icon={<ArchiveIcon />}
+              trailing={
+                archivedCount > 0 ? (
+                  <span className="shrink-0 text-xs text-fg-subtle">{archivedCount}</span>
+                ) : null
+              }
+            >
+              Archive
+            </NavRow>
           </div>
         </>
       ) : (
