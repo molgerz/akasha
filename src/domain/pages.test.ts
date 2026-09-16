@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  archivedPages,
   buildPages,
   buildTree,
   canMoveUnder,
@@ -22,6 +23,7 @@ function rev(partial: Partial<Revision> & { id: string }): Revision {
     parentRevs: [],
     summary: null,
     content: '',
+    archived: false,
     ...partial,
   }
 }
@@ -237,5 +239,106 @@ describe('sibling order', () => {
     ])
     expect(first.map((page) => page.slug)).toEqual(['alpha', 'bravo'])
     expect(second.map((page) => page.slug)).toEqual(first.map((page) => page.slug))
+  })
+})
+
+describe('an archived page', () => {
+  const archived = (slug: string, parent: string | null = null) =>
+    rev({ id: `${slug}-2`, slug, title: slug, parentSlug: parent, archived: true, createdAt: 2000, parentRevs: [`${slug}-1`] })
+  const visible = (slug: string, parent: string | null = null) =>
+    rev({ id: `${slug}-1`, slug, title: slug, parentSlug: parent })
+
+  it('is archived by its head, so a later revision brings it back', () => {
+    const gone = buildPages([visible('notes'), archived('notes')])
+    expect(gone[0].archived).toBe(true)
+
+    const back = buildPages([
+      visible('notes'),
+      archived('notes'),
+      rev({ id: 'notes-3', slug: 'notes', title: 'notes', createdAt: 3000, parentRevs: ['notes-2'] }),
+    ])
+    expect(back[0].archived).toBe(false)
+    // nothing was thrown away: the archiving revision is still part of the history
+    expect(back[0].revisions).toHaveLength(3)
+  })
+
+  it('stays in `pages` — its history and its own URL still have to find it', () => {
+    const pages = buildPages([visible('notes'), archived('notes')])
+    expect(pages.map((page) => page.slug)).toEqual(['notes'])
+  })
+
+  it('is left out of the tree', () => {
+    const pages = buildPages([visible('a'), visible('notes'), archived('notes')])
+    expect(flattenTree(buildTree(pages)).map((node) => node.slug)).toEqual(['a'])
+  })
+
+  it('does not take its subpages with it — they come up to the top level', () => {
+    // Hiding a page is a statement about that page. A subpage somebody else
+    // wrote is not covered by it, and taking the branch off screen would
+    // remove pages nobody asked to remove.
+    const pages = buildPages([
+      visible('handbook'),
+      archived('handbook'),
+      visible('onboarding', 'handbook'),
+    ])
+    const tree = buildTree(pages)
+    expect(tree.map((node) => node.slug)).toEqual(['onboarding'])
+    expect(tree[0].depth).toBe(0)
+  })
+
+  it('follows the newer leaf on a fork, the same revision the content follows', () => {
+    const base = rev({ id: 'r1', slug: 'notes', title: 'notes' })
+    const keep = rev({ id: 'keep', slug: 'notes', title: 'notes', createdAt: 2000, parentRevs: ['r1'] })
+    const drop = rev({ id: 'drop', slug: 'notes', title: 'notes', createdAt: 3000, parentRevs: ['r1'], archived: true })
+    const pages = buildPages([base, keep, drop])
+    expect(pages[0].leaves).toHaveLength(2)
+    expect(pages[0].head.id).toBe('drop')
+    expect(pages[0].archived).toBe(true)
+  })
+})
+
+
+/**
+ * The archive listing. An archived page is out of the tree, the search and the
+ * overview, which leaves its own URL as the only way back to it — so this list
+ * is the only way back for anyone who does not still have that link.
+ * src/routes/ArchiveView.tsx
+ */
+describe('archivedPages', () => {
+  const archivedAt = (slug: string, at: number) =>
+    rev({ id: `${slug}-2`, slug, title: slug, archived: true, createdAt: at, parentRevs: [`${slug}-1`] })
+  const visible = (slug: string) => rev({ id: `${slug}-1`, slug, title: slug })
+
+  it('lists only the archived pages', () => {
+    const pages = buildPages([visible('notes'), visible('deploy'), archivedAt('deploy', 2000)])
+    expect(archivedPages(pages).map((page) => page.slug)).toEqual(['deploy'])
+  })
+
+  it('puts the most recently archived first, not the alphabetically first', () => {
+    // The page somebody archived a minute ago by mistake is the one they come
+    // here for; a second index sorted by title would bury it.
+    const pages = buildPages([
+      visible('alpha'),
+      archivedAt('alpha', 2000),
+      visible('omega'),
+      archivedAt('omega', 3000),
+    ])
+    expect(archivedPages(pages).map((page) => page.slug)).toEqual(['omega', 'alpha'])
+  })
+
+  it('orders two pages archived in the same second by slug, so every client agrees', () => {
+    const pages = buildPages([
+      visible('beta'),
+      archivedAt('beta', 2000),
+      visible('alpha'),
+      archivedAt('alpha', 2000),
+    ])
+    expect(archivedPages(pages).map((page) => page.slug)).toEqual(['alpha', 'beta'])
+  })
+
+  it('drops a page again once a later revision brings it back', () => {
+    const back = rev({ id: 'deploy-3', slug: 'deploy', title: 'deploy', createdAt: 3000, parentRevs: ['deploy-2'] })
+    const pages = buildPages([visible('deploy'), archivedAt('deploy', 2000), back])
+    expect(archivedPages(pages)).toEqual([])
   })
 })

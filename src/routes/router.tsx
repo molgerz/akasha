@@ -5,6 +5,7 @@ import { PageView } from './PageView'
 import { EditorView } from './EditorView'
 import { NewPageView } from './NewPageView'
 import { SearchView } from './SearchView'
+import { ArchiveView } from './ArchiveView'
 import { SpaceSettingsRoute } from './SpaceSettings'
 import { SpacesSettingsList } from './SpacesSettingsList'
 import { HistoryView } from './HistoryView'
@@ -28,6 +29,9 @@ export const router = createBrowserRouter([
       { path: '/s/:group', element: <SpaceOverview /> },
       { path: '/s/:group/new', element: <NewPageView /> },
       { path: '/s/:group/search', element: <SearchView /> },
+      // Before `:slug`, so the word is a route and not a page that happens to
+      // be called "archive". Same reason `new` and `search` sit up here.
+      { path: '/s/:group/archive', element: <ArchiveView /> },
       { path: '/s/:group/:slug', element: <PageView /> },
       { path: '/s/:group/:slug/edit', element: <EditorView /> },
       { path: '/s/:group/:slug/history', element: <HistoryView /> },

@@ -92,6 +92,24 @@ export const TAGS = {
   SUMMARY: 'summary',
   /** Restore: id of the revision whose content was taken over */
   RESTORE_OF: 'restore-of',
+  /**
+   * Marks a revision as archiving its page: the page leaves the tree, the
+   * search and the navigation, while its history stays reachable and a later
+   * revision without the tag brings it back.
+   *
+   * Named for what it does, not for what it resembles. A "tombstone" in the
+   * distributed-systems sense marks a *deletion*, and nothing is deleted here
+   * — the text travels with the revision and the operation is symmetric. The
+   * neighbouring candidate, `hidden`, promises secrecy the feature does not
+   * deliver: an archived page still answers its own URL.
+   *
+   * **Presence is the signal, the value is not read.** It is written as `1`
+   * rather than as a one-element tag because a bare `["archived"]` is legal
+   * NIP-01 but is the kind of edge every relay and foreign client handles
+   * slightly differently. The value is reserved; nothing may start depending
+   * on it without a NIP to point at. docs/05-versioning-history.md
+   */
+  ARCHIVED: 'archived',
   /** Content type, always text/markdown here */
   MIME: 'm',
   /** NIP-31: fallback description for foreign clients */

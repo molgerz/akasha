@@ -18,6 +18,17 @@ export type Page = {
   revisions: Revision[]
   /** leaves of the chain. More than one = a fork */
   leaves: Revision[]
+  /**
+   * The page was archived by a revision carrying the archived tag: it leaves
+   * the tree, the search and the navigation, and only its history and its own
+   * URL still reach it.
+   *
+   * Read off the **head**, so it follows the same revision the content does.
+   * On a fork where one leaf archives the page and the other does not, the
+   * newer leaf decides — the same rule that decides which text is shown,
+   * rather than a second one nobody could predict.
+   */
+  archived: boolean
 }
 
 function sortNewestFirst(a: Revision, b: Revision): number {
@@ -69,6 +80,7 @@ export function buildPages(
       head,
       revisions: sorted,
       leaves,
+      archived: head.archived,
     })
   }
 
@@ -96,10 +108,19 @@ export type PageNode = Page & { children: PageNode[]; depth: number }
  * The page tree for the sidebar. Pages whose parent does not (or no longer)
  * exist hang at the top level — hiding them would be worse than filing them in
  * the wrong place.
+ *
+ * An archived page is left out, and by that same rule its children come up to
+ * the top level rather than disappearing with it. Archiving a page is a
+ * statement about that page; a subpage somebody else wrote is not covered by
+ * it, and taking a branch off screen because its root was archived would
+ * remove pages nobody asked to remove.
  */
 export function buildTree(pages: Page[]): PageNode[] {
   const nodes = new Map<string, PageNode>()
-  for (const page of pages) nodes.set(page.slug, { ...page, children: [], depth: 0 })
+  for (const page of pages) {
+    if (page.archived) continue
+    nodes.set(page.slug, { ...page, children: [], depth: 0 })
+  }
 
   const roots: PageNode[] = []
   for (const node of nodes.values()) {
@@ -182,6 +203,30 @@ export function descendantSlugs(pages: Page[], slug: string): Set<string> {
     queue.push(...(childrenOf.get(current) ?? []))
   }
   return found
+}
+
+/** The direct children of `slug`, whatever their own visibility. */
+export function childSlugs(pages: Page[], slug: string): string[] {
+  return pages.filter((page) => page.parentSlug === slug).map((page) => page.slug)
+}
+
+/**
+ * The archived pages, most recently archived first.
+ *
+ * Ordered by the head's timestamp and not by title, because an archive is read
+ * as a log of what was taken out rather than as a second page index — the page
+ * somebody archived by mistake a minute ago is the one they come here for. The
+ * head *is* the archiving revision: archiving publishes one on top of the
+ * chain, so its timestamp is when the page left the tree.
+ * src/routes/ArchiveView.tsx
+ */
+export function archivedPages(pages: Page[]): Page[] {
+  return pages
+    .filter((page) => page.archived)
+    .sort((a, b) => {
+      if (b.head.createdAt !== a.head.createdAt) return b.head.createdAt - a.head.createdAt
+      return a.slug < b.slug ? -1 : 1
+    })
 }
 
 /** Whether `slug` may become a child of `targetSlug`. null = top level. */

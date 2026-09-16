@@ -20,6 +20,12 @@ import type { Page } from '../domain/pages'
  * reversed, with a guard against a cycle: `page-parent` comes off the relay
  * from an arbitrary key, and two pages naming each other as parent would
  * otherwise loop here forever.
+ *
+ * An archived parent ends the trail, exactly as it ends a branch in
+ * `buildTree`: the subpage is at the top level there, and a crumb leading into
+ * a page that is out of the tree would contradict the sidebar the reader is
+ * looking at.
+ * src/domain/pages.ts
  */
 function ancestors(pages: Page[], page: Page): Page[] {
   const chain: Page[] = []
@@ -28,7 +34,7 @@ function ancestors(pages: Page[], page: Page): Page[] {
   while (cursor && !seen.has(cursor)) {
     seen.add(cursor)
     const parent = pages.find((entry) => entry.slug === cursor)
-    if (!parent) break
+    if (!parent || parent.archived) break
     chain.unshift(parent)
     cursor = parent.parentSlug
   }
@@ -163,6 +169,27 @@ export function PageView() {
           Comments simply falls where the content ends. */}
       <div className="flex-1">
         <PageTitle below={<Byline revision={page.head} />}>{page.title}</PageTitle>
+
+        {/* A page that is out of the tree still answers its own URL, so the
+            one place somebody can learn it was archived is the page itself.
+            Above the fork notice: "this page is out of the space" outranks
+            "it has two versions". */}
+        {page.archived ? (
+          <div className="mb-6">
+            <Callout
+              tone="warning"
+              title="This page is archived"
+              actions={
+                <ButtonLink to={`${base}/${page.slug}/history`} size="sm">
+                  History and restore
+                </ButtonLink>
+              }
+            >
+              It is out of the tree and the search, so nobody will come across it. This link
+              keeps working.
+            </Callout>
+          </div>
+        ) : null}
 
         {forked ? (
           <div className="mb-6">

@@ -38,6 +38,11 @@ export function searchPages(pages: Page[], query: string, maxSnippets = 3): Sear
   const hits: SearchHit[] = []
 
   for (const page of pages) {
+    // An archived page is out of the navigation, and a search result is
+    // navigation. Filtered here rather than at the call site so a new caller
+    // cannot forget it — `space.pages` deliberately still carries archived
+    // pages, because the history and the page's own URL must still find them.
+    if (page.archived) continue
     const title = page.title.toLowerCase()
     const lines = page.head.content.split('\n')
     const lower = lines.map((line) => line.toLowerCase())
