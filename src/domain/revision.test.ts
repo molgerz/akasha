@@ -60,4 +60,24 @@ describe('parseRevision', () => {
   it('falls back to the slug as the title when no title tag exists', () => {
     expect(parseRevision(event({}), 'engineering')?.title).toBe('onboarding')
   })
+
+  it('reads the archived flag from the tag being there, not from its value', () => {
+    const archived = (tag: string[]) =>
+      parseRevision(
+        event({ tags: [['h', 'engineering'], ['d', 'onboarding'], tag] }),
+        'engineering',
+      )?.archived
+
+    expect(archived(['archived', '1'])).toBe(true)
+    // The value is reserved and deliberately not read — anything there means
+    // the same thing, so a client writing something else still hides the page
+    // rather than silently publishing a visible one. src/nostr/kinds.ts
+    expect(archived(['archived', 'whatever'])).toBe(true)
+    expect(archived(['archived', ''])).toBe(true)
+    expect(archived(['summary', 'not archived'])).toBe(false)
+  })
+
+  it('is not archived when the tag is absent', () => {
+    expect(parseRevision(event({}), 'engineering')?.archived).toBe(false)
+  })
 })

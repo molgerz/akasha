@@ -16,6 +16,7 @@ function rev(slug: string, title: string, content: string): Revision {
     parentRevs: [],
     summary: null,
     content,
+    archived: false,
   }
 }
 
@@ -74,3 +75,22 @@ describe('highlightParts', () => {
     expect(highlightParts('nothing here', 'vpn')).toEqual([{ text: 'nothing here', hit: false }])
   })
 })
+
+describe('an archived page', () => {
+  // Both directions, because one of them alone proves nothing: an
+  // implementation that never returns a hit would pass the exclusion on its
+  // own. The pair pins that the archived tag is what makes the difference.
+  it('is never a search hit — a result is navigation', () => {
+    const first = rev('notes', 'Release notes', 'the release notes')
+    const second = { ...first, id: 'gone', createdAt: 2000, parentRevs: ['notes'] }
+
+    const visible = buildPages([first, { ...second, archived: false }])
+    expect(visible[0].archived).toBe(false)
+    expect(searchPages(visible, 'release').map((hit) => hit.page.slug)).toEqual(['notes'])
+
+    const archived = buildPages([first, { ...second, archived: true }])
+    expect(archived[0].archived).toBe(true)
+    expect(searchPages(archived, 'release')).toEqual([])
+  })
+})
+

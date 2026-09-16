@@ -44,12 +44,22 @@ function revision(id: string, slug: string, title: string): Revision {
     parentRevs: [],
     summary: null,
     content: `${title} body`,
+    archived: false,
   }
 }
 
 function pageOf(slug: string, title: string): Page {
   const head = revision(`rev-${slug}`, slug, title)
-  return { slug, title, parentSlug: null, order: null, head, revisions: [head], leaves: [head] }
+  return {
+    slug,
+    title,
+    parentSlug: null,
+    order: null,
+    head,
+    revisions: [head],
+    leaves: [head],
+    archived: false,
+  }
 }
 
 function titleInput(): HTMLInputElement {
