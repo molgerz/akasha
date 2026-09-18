@@ -289,3 +289,10 @@ Two further substantive consequences:
   traceable back to the ticket at a glance: branch `con-1-create-space-from-app`
   (type prefix optional in front, e.g. `feat/con-1-...`), PR title
   `CON-1: create a space from the app`. A change with no ticket gets no prefix.
+- **Never delete or "tidy up" branches on its own initiative** — local or
+  remote, merged or stale. Branch cleanup always needs the user's explicit
+  approval first; propose the exact list and wait.
+- **Changes to `main` always go through a pull request.** Branch
+  `con-<n>-...` off `main`, push it, open a PR against `main` — never push to
+  `main` directly, even when account permissions would allow bypassing branch
+  protection. Merge the PR once its required checks pass.
