@@ -123,9 +123,27 @@ never downloads it.
 
 ## No flash on load
 
-A tiny blocking inline script in `index.html` reads `localStorage` and sets
-`data-theme` **before** the bundle loads. Without that step, every reload
-briefly flashes light mode.
+A tiny blocking script reads `localStorage` and sets `data-theme` **before** the
+bundle loads. Without that step, every reload briefly flashes light mode.
+
+It used to be inline in `index.html`. It now lives in
+`public/theme-bootstrap.js` and is loaded with
+`<script src="/theme-bootstrap.js"></script>` — **classic and
+render-blocking**, deliberately not `type="module"` and not `defer`, both of
+which are deferred and would bring back exactly the flash this script exists to
+prevent. Vite copies `public/` verbatim, so there is no build entry for it.
+
+The reason for the move is the Content-Security-Policy
+([09](09-security-privacy.md)): under `script-src 'self'` an inline block is
+blocked, and the alternatives are worse. A hash has to be recomputed every time
+the script is touched, and silently blocks the script when someone forgets; a
+nonce has to be minted per response, which a static host cannot do at all. The
+cost is one extra request before first paint. It is a few hundred bytes from
+the same origin, requested from `<head>` before the bundle, so on a local
+preview build it lands well ahead of the paint it has to beat — but that is
+the shape of the trade, not a budget: no figure here is a contract, and the
+margin on a cold cache over a slow link is the case to re-measure if the flash
+ever comes back.
 
 ## Timing
 
