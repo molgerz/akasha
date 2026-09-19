@@ -35,6 +35,7 @@
 | Risk | Countermeasure |
 |---|---|
 | XSS through Markdown from arbitrary npubs | `rehype-sanitize` with a strict allowlist, no `dangerouslySetInnerHTML`, no raw HTML, no `javascript:` links — and a Content-Security-Policy behind it as a second layer, see below |
+| The `url` a Blossom server returns for an upload (`javascript:`, `data:`, or one that ends the Markdown link early) | Accepted only if it parses as an absolute `http(s)` URL, otherwise the blob is addressed by its own sha256; the link destination is percent-encoded at insertion time exactly as the label already was. Second line: the renderer refuses those schemes anyway and the server is operator-configured — this is about what gets *stored*, which every other client reads too (`src/nostr/blossom.ts`) |
 | Images/iframes used as trackers | **Accepted trade:** every image is loaded directly, whatever host it points at — so a host learns the reader's IP, which page is being read and when, and can count reads. No iframes. See "Images are loaded directly" below |
 | Forged `h` tags (an event from another group smuggled in) | Checked after loading: `h` must match the open space, otherwise the event is discarded |
 | Forgetting to verify signatures | Verification is enforced in the data layer, not optional per call |
