@@ -12,6 +12,7 @@ import { HistoryView } from './HistoryView'
 import { BlameView } from './BlameView'
 import { ProfileSettings } from './ProfileSettings'
 import { NotFound } from './NotFound'
+import { SPACE_ROUTE_PATTERN, spaceArchiveUrl, spaceNewUrl, spaceSearchUrl } from './space-urls'
 
 /**
  * Routes per docs/06-ui-information-architecture.md. The :group parameter
@@ -27,11 +28,16 @@ export const router = createBrowserRouter([
       { path: '/settings/spaces', element: <SpacesSettingsList /> },
       { path: '/settings/spaces/:group', element: <SpaceSettingsRoute /> },
       { path: '/s/:group', element: <SpaceOverview /> },
-      { path: '/s/:group/new', element: <NewPageView /> },
-      { path: '/s/:group/search', element: <SearchView /> },
-      // Before `:slug`, so the word is a route and not a page that happens to
-      // be called "archive". Same reason `new` and `search` sit up here.
-      { path: '/s/:group/archive', element: <ArchiveView /> },
+      // The app's own views live behind '~', a segment no page slug can ever
+      // produce: the slug comes off the relay as whoever wrote it normalised
+      // the title, and normalizeSlug keeps only letters, numbers, combining
+      // marks and '-'. A page titled "Archive" therefore stays reachable at
+      // /s/:group/archive instead of opening the archive view (CON-50). The
+      // paths are built through space-urls.ts, which owns the prefix, so the
+      // routes and the links to them cannot drift apart.
+      { path: spaceNewUrl(SPACE_ROUTE_PATTERN), element: <NewPageView /> },
+      { path: spaceSearchUrl(SPACE_ROUTE_PATTERN), element: <SearchView /> },
+      { path: spaceArchiveUrl(SPACE_ROUTE_PATTERN), element: <ArchiveView /> },
       { path: '/s/:group/:slug', element: <PageView /> },
       { path: '/s/:group/:slug/edit', element: <EditorView /> },
       { path: '/s/:group/:slug/history', element: <HistoryView /> },

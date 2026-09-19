@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useSpaceRoute } from './space-route'
+import { spaceArchiveUrl, spaceNewUrl } from './space-urls'
 import { Author } from '../ui/Author'
 import { WriteCheck } from '../ui/WriteCheck'
 import { MemberAdmin } from '../ui/MemberAdmin'
@@ -107,7 +108,7 @@ export function SpaceOverview() {
               Admin
             </ButtonLink>
           ) : null}
-          <ButtonLink variant="primary" to={`${base}/new`}>
+          <ButtonLink variant="primary" to={spaceNewUrl(base)}>
             <PlusIcon className="size-4" />
             New page
           </ButtonLink>
@@ -227,7 +228,7 @@ export function SpaceOverview() {
             src/routes/ArchiveView.tsx */}
         {archivedCount > 0 ? (
           <p className="mt-3 text-xs text-fg-subtle">
-            <Link to={`${base}/archive`} className="hover:text-accent-fg">
+            <Link to={spaceArchiveUrl(base)} className="hover:text-accent-fg">
               Archive · {archivedCount} page{archivedCount === 1 ? '' : 's'}
             </Link>{' '}
             out of the tree, the search and this list.

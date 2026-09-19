@@ -6,6 +6,7 @@ import { UserChip } from '../UserChip'
 import { IconButton } from '../controls'
 import { PanelLeftIcon, SearchIcon } from '../icons'
 import { RelayIndicator } from '../RelayStatusBadge'
+import { spaceSearchUrl } from '../../routes/space-urls'
 import type { RelaySnapshot } from '../../nostr/client'
 import type { RelayInfo } from '../../nostr/relay-status'
 
@@ -115,7 +116,7 @@ export function Topbar({
         onSubmit={(event) => {
           event.preventDefault()
           if (groupBase && query.trim().length > 0) {
-            navigate(`${groupBase}/search?q=${encodeURIComponent(query.trim())}`)
+            navigate(spaceSearchUrl(groupBase, query.trim()))
           }
         }}
         className="relative flex items-center"

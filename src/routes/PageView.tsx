@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useSpaceRoute } from './space-route'
+import { spaceNewUrl } from './space-urls'
 import { Markdown } from '../ui/Markdown'
 import { Byline } from '../ui/Byline'
 import { AuthorName } from '../ui/Author'
@@ -91,7 +92,7 @@ export function PageView() {
             <p className="text-base text-fg-muted">
               There is no revision for this slug in this space yet.
             </p>
-            <ButtonLink variant="primary" to={`${base}/new?slug=${encodeURIComponent(slug)}`}>
+            <ButtonLink variant="primary" to={spaceNewUrl(base, { slug })}>
               Create this page
             </ButtonLink>
           </div>
@@ -151,10 +152,7 @@ export function PageView() {
       <IconButtonLink to={`${base}/${page.slug}/blame`} label="Line origin">
         <BlameIcon className="size-4.5" />
       </IconButtonLink>
-      <IconButtonLink
-        to={`${base}/new?parent=${encodeURIComponent(page.slug)}`}
-        label="New subpage"
-      >
+      <IconButtonLink to={spaceNewUrl(base, { parent: page.slug })} label="New subpage">
         <SubpageIcon className="size-4.5" />
       </IconButtonLink>
     </>

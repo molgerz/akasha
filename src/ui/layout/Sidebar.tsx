@@ -13,6 +13,7 @@ import { spaceAccess } from '../../domain/space-access'
 import { useSession } from '../../session/session'
 import { useMovePage } from '../move-page'
 import { InitialsDisc, SectionLabel } from '../controls'
+import { spaceArchiveUrl, spaceNewUrl, spaceSearchUrl } from '../../routes/space-urls'
 import {
   ArchiveIcon,
   ChevronDownIcon,
@@ -316,10 +317,10 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
             <NavRow to={base} end icon={<HomeIcon />}>
               Overview
             </NavRow>
-            <NavRow to={`${base}/search`} icon={<SearchIcon />}>
+            <NavRow to={spaceSearchUrl(base)} icon={<SearchIcon />}>
               Search
             </NavRow>
-            <NavRow to={`${base}/new`} icon={<PlusIcon />}>
+            <NavRow to={spaceNewUrl(base)} icon={<PlusIcon />}>
               New page
             </NavRow>
           </div>
@@ -331,7 +332,7 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
           <div className="group/pages mt-5 flex h-7 items-center gap-2 px-4">
             <SectionLabel className="flex-1">Pages</SectionLabel>
             <Link
-              to={`${base}/new`}
+              to={spaceNewUrl(base)}
               aria-label="New page in this space"
               title="New page in this space"
               className="flex size-5 items-center justify-center rounded text-fg-subtle opacity-0 group-hover/pages:opacity-100 hover:bg-surface-selected hover:text-fg focus-visible:opacity-100"
@@ -378,7 +379,7 @@ export function Sidebar({ group, space, snapshot, info, inSettings }: Props) {
               is what appears and disappears. src/routes/ArchiveView.tsx */}
           <div className="border-t border-line px-2 py-1.5">
             <NavRow
-              to={`${base}/archive`}
+              to={spaceArchiveUrl(base)}
               icon={<ArchiveIcon />}
               trailing={
                 archivedCount > 0 ? (
