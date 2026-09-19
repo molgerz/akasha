@@ -123,7 +123,7 @@ Features:
     wherever its title sorts instead of where it was. The genuinely orphaned
     case — a placement whose slug has no revisions at all — is a different
     problem ([02](02-data-model-events.md)).
-  - **The archive is a place.** `/s/:group/archive` lists what was archived,
+  - **The archive is a place.** `/s/:group/~archive` lists what was archived,
     newest first, with the way back on every row — linked from under the page
     tree and from the space overview ([06](06-ui-information-architecture.md)).
     Without it, taking a page out of the tree, the search and the overview

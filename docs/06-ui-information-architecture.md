@@ -165,7 +165,7 @@ suffocates in a column that narrow, so it gets `max-w-4xl`.
    would reveal it to exactly the people who already know the way, which is
    the opposite of what a place to find things is for. The space overview
    repeats the link under its page list when there is something to see, for
-   the reader who never opens the bar. `/s/:group/archive` lists them newest
+   the reader who never opens the bar. `/s/:group/~archive` lists them newest
    first — an archive nobody can open is not an archive but a hole the pages
    fall into.
 
@@ -485,9 +485,9 @@ of the possible states.
 ```
 /                          redirects to /settings/spaces
 /s/:group                  space overview (metadata, members, page list)
-/s/:group/new              create a page  (?parent=<slug> for a subpage)
-/s/:group/search           search         (?q=…)
-/s/:group/archive          the archived pages, newest first
+/s/:group/~new             create a page  (?parent=<slug> for a subpage)
+/s/:group/~search          search         (?q=…)
+/s/:group/~archive         the archived pages, newest first
 /s/:group/:slug            read a page
 /s/:group/:slug/edit       edit           (?merge=1 to merge versions)
 /s/:group/:slug/history    history with comparison
@@ -498,4 +498,28 @@ of the possible states.
 ```
 
 `:group` includes the relay host (URL-encoded) so that a link is
-self-contained: `/s/relay.example.com'engineering/onboarding`.
+self-contained: `/s/relay.example.com'engineering/onboarding`. Page URLs are
+the ones people share, so nothing about them ever moves.
+
+### Why the app's views carry `~`
+
+The three view routes and a page slug share one namespace: React Router
+matches a static segment before `:slug`, so a page titled "Archive",
+"Search" or "New" — normalised to exactly those slugs by every NIP-54
+client — would publish fine, show up in the tree, and then answer its own
+URL with an app view. The page is still there and still in the search; it
+just has no address any more.
+
+Reserving the words in the editor cannot fix this: the slug arrives from
+the relay, so a member on any other client can publish a revision with
+`d=archive` and our editor never sees the title. The views therefore sit
+behind `~`, which `normalizeSlug` (`src/nostr/kinds.ts`) can never produce —
+it keeps only letters, numbers, combining marks and `-`, and strips the
+rest, so no slug from any client can shadow a view, and every page title is
+free again. The prefix is owned by `src/routes/space-urls.ts`, which builds
+the routes in `src/routes/router.tsx` and every link to the views; the
+invariant is pinned by `src/routes/space-urls.test.ts`.
+
+The old view addresses (`/s/:group/new`, `/s/:group/search`) are gone
+rather than redirected: a redirect route for those words would be a static
+segment in the page namespace again, the exact thing this removes.
