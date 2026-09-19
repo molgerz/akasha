@@ -1,10 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { configDefaults } from 'vitest/config'
 import { PREVIEW_CONTENT_SECURITY_POLICY } from './src/csp'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  test: {
+    // Local git worktrees under .worktrees/ and .claude/worktrees/ carry
+    // other branches' checkouts, whose tests vitest would otherwise pick up
+    // from the repo root and run against this branch's state.
+    exclude: [...configDefaults.exclude, '**/.worktrees/**', '**/.claude/**'],
+  },
   // 5173 is taken by a container on this machine
   server: {
     port: 5273,
