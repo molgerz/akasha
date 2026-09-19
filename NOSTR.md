@@ -127,6 +127,7 @@ backlog, see [docs/10](docs/10-roadmap.md).
 | `summary` | 1818 | Change note, the equivalent of a commit message |
 | `content-hash` | 1818 | sha256 of the content |
 | `restore-of` | 1818 | A restore points at the revision it copied |
+| `archived` | 1818 | The revision archives its page: it leaves the tree, the search and the overview, while the history stays and the URL keeps working. **Presence is the signal, the value is unread** (written as `1`; a bare one-element tag is legal NIP-01 but an edge every relay handles a bit differently). A later revision without the tag brings the page back. Not a standard — our own kind, our own tag |
 | `m` | 1818 | Always `text/markdown` |
 | `alt` | 1818, 1111, 31818 | NIP-31 fallback for foreign clients |
 | `K` / `k` / `e` | 1111 | NIP-22: kind of the root object, kind of the direct parent, parent comment |

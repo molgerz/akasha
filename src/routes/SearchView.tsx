@@ -42,6 +42,12 @@ export function SearchView() {
   const spaceName = space.metadata?.name ?? group.id
   const empty = query.trim().length === 0
   const hits = searchPages(space.pages, query)
+  // The denominator has to be what the search can actually return. Archived
+  // pages are skipped inside `searchPages` (src/domain/search.ts), so counting
+  // them here would promise matches in pages that are out of the navigation —
+  // "0 of 12" where three of the twelve can never be a hit. The full list is
+  // still what goes *into* the search, which owns the filter.
+  const searchable = space.pages.filter((page) => !page.archived)
   // Search runs over the pages the store holds. In a space the relay is
   // withholding that is none, so "Nothing found in 0 pages" would be true and
   // useless — it sounds like the search failed, not like the door is shut.
@@ -57,7 +63,7 @@ export function SearchView() {
         below={
           empty || hidden ? null : (
             <p className="text-sm text-fg-subtle">
-              {hits.length} of {space.pages.length} pages
+              {hits.length} of {searchable.length} pages
             </p>
           )
         }
@@ -79,7 +85,7 @@ export function SearchView() {
         </div>
       ) : hits.length === 0 ? (
         <p className="text-base text-fg-muted">
-          {space.loading ? 'loading pages…' : `Nothing found in ${space.pages.length} pages.`}
+          {space.loading ? 'loading pages…' : `Nothing found in ${searchable.length} pages.`}
         </p>
       ) : (
         <ul className="space-y-2.5">

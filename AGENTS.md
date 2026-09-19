@@ -264,8 +264,35 @@ Two further substantive consequences:
   matter of design. Add one individually, with its findings fixed, if it is
   ever wanted. Ignored trees: `dist`, `coverage`, and the third-party
   checkouts under `.local/` and `.gstack/`.
+- **A branch does not change the same thing twice.** Its commits have to read
+  as if the work had been done once, in order: no file is touched by two
+  commits of the same branch unless the second change is a consequence of
+  later work rather than a correction of the first, and nothing a branch adds
+  is renamed or removed again by that same branch. Otherwise the reviewer
+  reads work that was thrown away before the PR was even opened. Count the
+  touches before handing over — anything above `1` is a file to justify or to
+  fold together:
+
+  ```
+  git log --format='%h' main..HEAD | while read c; do git show --format= --name-only $c; done | sort | uniq -c | sort -rn
+  ```
+
+  The repair is not to patch history but to rebuild the branch from its final
+  tree, which removes the churn by construction: `git reset <main>`, then one
+  `git add`/`git commit` per group, and `git diff --quiet HEAD <backup>` as
+  the proof that the tree still is the one that was reviewed. Every commit
+  passes the gates above on its own — that is what makes a split honest
+  rather than cosmetic, and it is also what caps the number of commits: a
+  boundary that would split one file across two commits is not a boundary.
 - Placeholders in the UI name their phase from `docs/10-roadmap.md`.
 - Every branch and PR title starts with its Kaneo ticket id, so either is
   traceable back to the ticket at a glance: branch `con-1-create-space-from-app`
   (type prefix optional in front, e.g. `feat/con-1-...`), PR title
   `CON-1: create a space from the app`. A change with no ticket gets no prefix.
+- **Never delete or "tidy up" branches on its own initiative** — local or
+  remote, merged or stale. Branch cleanup always needs the user's explicit
+  approval first; propose the exact list and wait.
+- **Changes to `main` always go through a pull request.** Branch
+  `con-<n>-...` off `main`, push it, open a PR against `main` — never push to
+  `main` directly, even when account permissions would allow bypassing branch
+  protection. Merge the PR once its required checks pass.

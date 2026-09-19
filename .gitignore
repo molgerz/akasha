@@ -19,3 +19,4 @@ db/
 # third-party repos cloned locally (relay source)
 .local/
 .gstack/
+.collaborator

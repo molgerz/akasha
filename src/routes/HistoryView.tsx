@@ -11,6 +11,9 @@ import { publishRevision } from '../nostr/publish-page'
 import { classifyRejection } from '../nostr/client'
 import { deleteGroupEvent } from '../nostr/moderation'
 import { forgetEvent } from '../nostr/space-store'
+import { archiveConfirmation, useArchivePage } from '../ui/archive-page'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { childSlugs } from '../domain/pages'
 import type { Revision } from '../domain/revision'
 import { PageFrame, PageTitle } from '../ui/layout/PageFrame'
 import { Button, Callout, Card, IconButtonLink, SectionLabel } from '../ui/controls'
@@ -21,6 +24,16 @@ function stamp(seconds: number): string {
   return new Date(seconds * 1000).toLocaleString()
 }
 
+/**
+ * The act waiting for a confirmation. Both of this page's destructive actions
+ * go through one piece of state rather than a boolean each: only one dialog can
+ * be open, and a pair of booleans is a way to end up with two.
+ *
+ * Bringing an archived page back is deliberately not in here — it takes nothing
+ * away, and a dialog in front of it would ask people to confirm the undo.
+ */
+type Pending = { kind: 'archive' } | { kind: 'delete'; revision: Revision }
+
 export function HistoryView() {
   const { group, space, base, slug } = useSpaceRoute()
   const { session, ensureSamePubkey } = useSession()
@@ -29,6 +42,12 @@ export function HistoryView() {
   const [details, setDetails] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The notice carries its own title: this view has two flows that succeed in
+  // very different ways, and a fixed title would put an archiving under a
+  // headline announcing a deletion — the one reading this page must not draw.
+  const [notice, setNotice] = useState<{ title: string; body: string } | null>(null)
+  const archive = useArchivePage(group?.relayUrl ?? '', group?.id ?? '')
+  const [pending, setPending] = useState<Pending | null>(null)
 
   if (!group || !base || !slug) {
     return (
@@ -59,14 +78,29 @@ export function HistoryView() {
     space.admins.some((admin) => admin.pubkey === session.pubkey)
   const revisions = page.revisions
 
+  /**
+   * Wipes what the previous action left on screen. The archive hook keeps its
+   * own error state, so clearing the local one is not enough — otherwise a
+   * failed archiving stays in the callout while the next action reports its
+   * own result.
+   */
+  const clearFeedback = () => {
+    setError(null)
+    setNotice(null)
+    archive.setError(null)
+  }
+
+  // Two sources, one callout: the actions on this page report through local
+  // state, archiving reports through its hook. Only one of them can be set at
+  // a time, because every action clears both before it starts.
+  const shownError = error ?? archive.error
+
+  // The confirmation stays open until the relay has answered — closing it on
+  // the click would leave a slow relay looking like nothing happened, and the
+  // dialog is the only thing on screen disabled while the request is out.
   const removeRevision = async (revision: Revision) => {
     if (session.status !== 'signed-in') return
-    // The relay really enforces this deletion — so ask first.
-    const ok = window.confirm(
-      `Delete the revision from ${stamp(revision.createdAt)} on the relay? This cannot be undone.`,
-    )
-    if (!ok) return
-    setError(null)
+    clearFeedback()
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -88,6 +122,7 @@ export function HistoryView() {
       setError(err instanceof Error ? err.message : 'signing was cancelled')
     } finally {
       setBusy(false)
+      setPending(null)
     }
   }
   const from = selection ? revisions.find((r) => r.id === selection.from) : revisions[1]
@@ -95,7 +130,7 @@ export function HistoryView() {
 
   const restore = async (revision: Revision) => {
     if (session.status !== 'signed-in') return
-    setError(null)
+    clearFeedback()
     setBusy(true)
     try {
       const same = await ensureSamePubkey()
@@ -139,6 +174,40 @@ export function HistoryView() {
     }
   }
 
+  /**
+   * Archiving the page, and bringing it back. A page-level action, so it sits
+   * in the view that is already about this page's lifecycle rather than among
+   * the navigation icons on the page itself. src/ui/archive-page.ts
+   */
+  const toggleArchived = async () => {
+    if (session.status !== 'signed-in') return
+    clearFeedback()
+    // The failure is *not* read back off `archive` here: this closure holds the
+    // hook's object from the render it was created in, and `setArchived`
+    // reports its error by setting state, which produces a new object rather
+    // than mutating that one. Reading `archive.error` after the await would
+    // therefore show the previous attempt's message, never the current one. The
+    // callout renders `archive.error` directly instead — the same way the
+    // sidebar renders `useMovePage`'s. src/ui/archive-page.ts
+    const ok = await archive.setArchived(page, !page.archived)
+    // Only now, for the same reason `removeRevision` waits: the confirmation
+    // is what shows that the request is still out.
+    setPending(null)
+    if (ok && !page.archived) {
+      setNotice({
+        title: 'The page is archived — and can come back',
+        body:
+          'The page is out of the tree, the search and the overview. Its history is ' +
+          'unchanged and this link still works — bring it back from here whenever you want.',
+      })
+    }
+  }
+
+  // Built on every render rather than inside the dialog, because the subpage
+  // count has to be the one at the moment the dialog is read — a page whose
+  // children moved while it was open would otherwise promise the old number.
+  const confirmation = archiveConfirmation(page, childSlugs(space.pages, page.slug).length)
+
   const option = (revision: Revision) => (
     <>
       {stamp(revision.createdAt)} · <AuthorName pubkey={revision.author} />
@@ -175,10 +244,41 @@ export function HistoryView() {
         {page.title}
       </PageTitle>
 
-      {error ? (
+      {shownError ? (
         <div className="mb-6">
           <Callout tone="danger" title="That did not work">
-            {error}
+            {shownError}
+          </Callout>
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div className="mb-6">
+          <Callout tone="warning" title={notice.title}>
+            {notice.body}
+          </Callout>
+        </div>
+      ) : null}
+
+      {page.archived ? (
+        <div className="mb-6">
+          <Callout
+            tone="warning"
+            title="This page is archived"
+            actions={
+              session.status === 'signed-in' ? (
+                <Button
+                  size="sm"
+                  disabled={busy || archive.busy}
+                  onClick={() => void toggleArchived()}
+                >
+                  Bring the page back
+                </Button>
+              ) : null
+            }
+          >
+            It is out of the tree and the search. Nothing was deleted — the history below is
+            complete.
           </Callout>
         </div>
       ) : null}
@@ -299,7 +399,7 @@ export function HistoryView() {
                         variant="subtle"
                         className="text-danger hover:bg-danger-bg"
                         disabled={busy}
-                        onClick={() => void removeRevision(revision)}
+                        onClick={() => setPending({ kind: 'delete', revision })}
                       >
                         Delete
                       </Button>
@@ -324,6 +424,70 @@ export function HistoryView() {
           })}
         </ol>
       </section>
+
+      {/* At the foot, not in the actions bar. Archiving a page is a page-level
+          action and belongs in the view about this page's lifecycle — but it
+          is also the weightiest thing here, and it has no business sitting
+          next to the navigation icons somebody reaches for to get back to
+          reading. */}
+      {session.status === 'signed-in' && !page.archived ? (
+        <section className="mt-12 border-t border-line pt-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy || archive.busy}
+              onClick={() => setPending({ kind: 'archive' })}
+            >
+              Archive this page
+            </Button>
+            {/* One line. The consequences are spelled out in full in the
+                confirmation a click away, and saying them twice here turned
+                the button into a paragraph with a button in front of it.
+                src/ui/ConfirmDialog.tsx */}
+            <p className="text-xs text-fg-subtle">
+              Takes it out of the navigation. Nothing is deleted.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      {/* Both confirmations live here rather than next to the buttons that open
+          them: a `<dialog>` is in the top layer wherever it sits in the markup,
+          and keeping them together makes it obvious that only one can be open.
+          src/ui/ConfirmDialog.tsx */}
+      <ConfirmDialog
+        open={pending?.kind === 'archive'}
+        title={confirmation.title}
+        confirmLabel="Archive the page"
+        busy={archive.busy}
+        onConfirm={() => void toggleArchived()}
+        onCancel={() => setPending(null)}
+      >
+        <p>{confirmation.body}</p>
+        {confirmation.subpages ? <p>{confirmation.subpages}</p> : null}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pending?.kind === 'delete'}
+        title="Delete this revision on the relay?"
+        confirmLabel="Delete the revision"
+        busy={busy}
+        onConfirm={() => {
+          if (pending?.kind === 'delete') void removeRevision(pending.revision)
+        }}
+        onCancel={() => setPending(null)}
+      >
+        <p>
+          The revision from{' '}
+          {pending?.kind === 'delete' ? stamp(pending.revision.createdAt) : ''} is removed by the
+          relay, which really enforces this. It cannot be undone.
+        </p>
+        <p>
+          Newer revisions built on it keep their text — what goes is this one step of the
+          chain.
+        </p>
+      </ConfirmDialog>
     </PageFrame>
   )
 }

@@ -19,7 +19,7 @@ Completed and verified:
 | Vite + React 19 + TS, routing per [06](06-ui-information-architecture.md) | `src/routes/router.tsx` |
 | Light/dark theme tokens, `@theme inline` | `src/index.css` |
 | System/light/dark switch with persistence | `src/theme/theme.tsx`, `src/ui/ThemeToggle.tsx` |
-| No flash on load | Inline script in `index.html` |
+| No flash on load | `public/theme-bootstrap.js`, loaded render-blocking from `index.html` |
 | All kinds and tags in one place, slug normalisation | `src/nostr/kinds.ts` |
 | Parsing the group address `host'id` | `src/nostr/group-address.ts` |
 | Relay connection + NIP-11 + backoff | `src/nostr/relay-status.ts` |
@@ -223,7 +223,6 @@ As of 2026-09-07, found while comparing the docs against the code:
 | End-to-end tests (Playwright), including the colour-mode regression | [07](07-tech-stack.md), [12](12-theming.md) |
 | `9021` join flow for relays without auto-join | [04](04-permissions-nip29.md) |
 | Deleting your own revision (NIP-09 `kind 5`) | [05](05-versioning-history.md) |
-| Hiding a whole page (tombstone) | [05](05-versioning-history.md) |
 | Writing `previous` timeline references | [02](02-data-model-events.md) |
 | Sidebar entries "all pages", "recently changed", "space settings" | [06](06-ui-information-architecture.md) |
 | Onboarding note that an npub is a permanent pseudonym | [09](09-security-privacy.md) |

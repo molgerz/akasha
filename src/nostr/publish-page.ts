@@ -19,6 +19,13 @@ export type RevisionInput = {
   parentRevs: string[]
   /** restore: event id of the revision whose content was taken over */
   restoreOf?: string
+  /**
+   * Archive the page: the revision carries the archived tag and the page
+   * leaves the tree, the search and the navigation. Publishing a later
+   * revision without it brings the page back, so this is a step in the chain
+   * and not a deletion. docs/05-versioning-history.md
+   */
+  archived?: boolean
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -41,7 +48,12 @@ export async function publishRevision(
     [TAGS.TITLE, input.title],
     [TAGS.MIME, MIME_MARKDOWN],
     [TAGS.CONTENT_HASH, await sha256Hex(input.content)],
-    [TAGS.ALT, `Wiki page "${input.title}" in space ${input.groupId}`],
+    [
+      TAGS.ALT,
+      input.archived
+        ? `Wiki page "${input.title}" was archived in space ${input.groupId}`
+        : `Wiki page "${input.title}" in space ${input.groupId}`,
+    ],
   ]
   if (input.parentSlug) tags.push([TAGS.PAGE_PARENT, input.parentSlug])
   // Absent rather than empty when there is none: the tree then falls back to
@@ -52,6 +64,8 @@ export async function publishRevision(
   // A restore deletes nothing: it creates a new revision with the old content
   // that points at its template. docs/05-versioning-history.md
   if (input.restoreOf) tags.push([TAGS.RESTORE_OF, input.restoreOf])
+  // Presence is the signal; the value is reserved. src/nostr/kinds.ts
+  if (input.archived) tags.push([TAGS.ARCHIVED, '1'])
   // NIP-27: everybody the text mentions gets a `p` tag, so the mention is
   // findable by the person mentioned and not only by whoever reads the page.
   // src/nostr/mentions.ts

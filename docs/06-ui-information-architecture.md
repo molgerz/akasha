@@ -151,6 +151,24 @@ suffocates in a column that narrow, so it gets `max-w-4xl`.
    marker, but amber and *after* the title — otherwise it would read as the leaf
    dot. Each level indents by 14px.
 
+   An **archived page** (a revision carrying the `archived` tag,
+   [05](05-versioning-history.md)) is not drawn here at all, and neither is it
+   in the search or the space overview — those three are the navigation. Its
+   subpages come up to the top level rather than vanishing with it, by the same
+   rule that catches a missing parent. The page itself still answers its own
+   URL, and says on the page that it is archived.
+
+   Because the tree is where people look for a page, the way out of it is
+   directly under the tree: an **Archive** row pinned below the scroll area,
+   carrying the count when there is one. The row itself is always there, empty
+   space or not — showing it only once a space has its first archived page
+   would reveal it to exactly the people who already know the way, which is
+   the opposite of what a place to find things is for. The space overview
+   repeats the link under its page list when there is something to see, for
+   the reader who never opens the bar. `/s/:group/archive` lists them newest
+   first — an archive nobody can open is not an archive but a hole the pages
+   fall into.
+
    Which branches are folded is kept in `localStorage`. Deliberately the
    *folded* ones rather than the open ones, otherwise a page created later would
    stay hidden until somebody expanded its parent. The branch leading to the
@@ -278,6 +296,29 @@ strip, the editor simply stays open and shows the relay's reason. A draft that
 lives only in the browser would be a second storage location with its own
 questions (where? for how long? what on account switch?) — that would need the
 local cache that has not been built yet.
+
+## Confirming something irreversible
+
+Anything that takes a page or a revision away asks first, and it asks in the
+app's own dialog (`src/ui/ConfirmDialog.tsx`), not in `window.confirm`. The
+browser's version is drawn in browser chrome — a system font, the origin above
+it, one line of text and an "OK" — which is the wrong voice for a decision the
+product is asking somebody to make, and has no room for the two or three
+sentences these decisions actually need.
+
+It is built on the native `<dialog>` and `showModal()`, so the top layer, the
+backdrop, the focus move, the inert page behind it and Escape come from the
+browser rather than from a `position: fixed` div pretending. Two rules it
+keeps:
+
+- **The button says the act**, never "OK": *Archive the page*, *Delete the
+  revision*. The label is the last thing read before the click.
+- **Cancel holds the focus.** Every one of these dialogs guards a change
+  somebody may not have meant to make, and a dialog that answers Return with
+  "yes" turns a stray keypress into the act it was there to prevent.
+
+Undoing is not confirmed. Bringing an archived page back takes nothing away,
+and a dialog in front of it would be asking people to confirm the undo.
 
 ## When the relay shows nothing
 
@@ -446,6 +487,7 @@ of the possible states.
 /s/:group                  space overview (metadata, members, page list)
 /s/:group/new              create a page  (?parent=<slug> for a subpage)
 /s/:group/search           search         (?q=…)
+/s/:group/archive          the archived pages, newest first
 /s/:group/:slug            read a page
 /s/:group/:slug/edit       edit           (?merge=1 to merge versions)
 /s/:group/:slug/history    history with comparison

@@ -191,6 +191,21 @@ export function SubpageIcon(props: IconProps) {
   )
 }
 
+/**
+ * The archive. A lid over a box, with a handle on the drawer below it — the
+ * shape people know from a storage box rather than the folder that already
+ * means "page" here. src/routes/ArchiveView.tsx
+ */
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="4.5" rx="1.25" />
+      <path d="M4.75 8.5v9.75a1.75 1.75 0 0 0 1.75 1.75h11a1.75 1.75 0 0 0 1.75-1.75V8.5" />
+      <path d="M10 12.5h4" />
+    </Icon>
+  )
+}
+
 export function CloseIcon(props: IconProps) {
   return (
     <Icon {...props}>
