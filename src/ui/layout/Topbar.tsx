@@ -37,7 +37,12 @@ export function Topbar({
   onToggleOverlay,
 }: {
   groupBase: string | null
-  snapshot: RelaySnapshot
+  /**
+   * null while the app is deliberately connected to no relay at all — the
+   * trust gate in AppShell. An indicator there could only report on a
+   * connection that does not exist, so the slot stays empty instead.
+   */
+  snapshot: RelaySnapshot | null
   info: RelayInfo | null
   /** wide screens: the bar is a column that folds away */
   columnHidden: boolean
@@ -131,7 +136,7 @@ export function Topbar({
       </form>
 
       <div className="flex min-w-0 items-center justify-end gap-1.5">
-        <RelayIndicator snapshot={snapshot} info={info} />
+        {snapshot ? <RelayIndicator snapshot={snapshot} info={info} /> : null}
         <div className="hidden sm:block">
           <ThemeToggle />
         </div>
